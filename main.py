@@ -18,6 +18,7 @@ sample_product_2 = {
     "price": 19.99
 }
 
+
 sample_product_3 = {
     "product_id": 789,
     "name": "Iphone",
