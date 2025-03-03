@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  my_pg:
+    image: postgres:latest
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: my_db
+    ports:
+      - "5432:5432"
+
+  fastapi_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      - my_pg
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:password@my_pg:5432/my_db
+
+  gradio_app:
+    build:
+      context: .
+      dockerfile: Dockerfile  # Использует тот же Dockerfile, но с другой командой
+    command: ["python", "my_app_front.py"]  # Запуск Gradio приложения
+    ports:
+      - "7860:7860"
+    depends_on:
+      - fastapi_app
