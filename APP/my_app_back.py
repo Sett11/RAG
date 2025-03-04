@@ -2,7 +2,7 @@ from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel
 import psycopg2
 import os
-# import uvicorn
+import uvicorn
 
 app=FastAPI()
 
@@ -52,7 +52,6 @@ async def get_vector(id_vector: int):
     if result is None:
         raise HTTPException(status_code=404, detail="Vector not found")
     return {"vector": result[0]}
-
 
 @app.delete("/delete_vector/{vector_id}")
 async def delete__vector(vector_id: int):
@@ -106,8 +105,8 @@ async def update_vector(vector_id: int, vector_model: VectorModel):
     conn.close()
     return {"message": "Vector updated successfully"}
 
-# if __name__=='__main__':
-#     uvicorn.run(app)
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 # Invoke-WebRequest -Uri "http://127.0.0.1:8000/update_vector/3" -Method PUT -Headers @{"Content-Type"="application/json"} -Body '{"vector": [4.0, 5.0, 7.0]}'
 # Invoke-WebRequest -Uri "http://127.0.0.1:8000/update_vector_element/3/1" -Method PUT -Headers @{"Content-Type"="application/json"} -Body '{"value": 5.5}'

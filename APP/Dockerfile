@@ -9,6 +9,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем приложение
+COPY my_app_db.sql /docker-entrypoint-initdb.d/
 COPY my_app_back.py ./
 COPY my_app_front.py ./
 
@@ -16,4 +17,4 @@ COPY my_app_front.py ./
 ENV DATABASE_URL=postgresql://postgres:password@my_pg:5432/my_db
 
 # Команда для запуска FastAPI
-CMD ["uvicorn", "my_app_back:app", "--host", "127.0.0.1", "--port", "8000"]
+CMD ["uvicorn", "my_app_back:app", "--host", "0.0.0.0", "--port", "8000"]
