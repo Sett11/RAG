@@ -8,8 +8,6 @@ WORKDIR /APP
 COPY requirements.txt ./ 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем приложение
-COPY my_app_db.sql /docker-entrypoint-initdb.d/
 COPY my_app_back.py ./
 COPY my_app_front.py ./
 
