@@ -3,8 +3,8 @@ import requests
 
 def insert_vector(vector):
     vector = [float(x) for x in vector.split(",")]
-    response = requests.post("http://127.0.0.1:8000/insert_vector/", json={"vector": vector})
-    # response = requests.post("http://fastapi_app:8000/insert_vector/", json={"vector": vector})
+    # response = requests.post("http://127.0.0.1:8000/insert_vector/", json={"vector": vector})
+    response = requests.post("http://fastapi_app:8000/insert_vector/", json={"vector": vector})
     
     if response.status_code != 200:
         print(f"Error: {response.status_code} - {response.text}")
@@ -12,18 +12,18 @@ def insert_vector(vector):
 
 
 def get_vectors():
-    response = requests.get("http://127.0.0.1:8000/get_vectors/")
-    # response = requests.get("http://fastapi_app:8000/get_vectors/")
+    # response = requests.get("http://127.0.0.1:8000/get_vectors/")
+    response = requests.get("http://fastapi_app:8000/get_vectors/")
     return response.json()
 
 def delete_vector(vector_id):
-    response = requests.delete(f"http://127.0.0.1:8000/delete_vector/{vector_id}")
-    # response = requests.delete(f"http://fastapi_app:8000/delete_vector/{vector_id}")
+    # response = requests.delete(f"http://127.0.0.1:8000/delete_vector/{vector_id}")
+    response = requests.delete(f"http://fastapi_app:8000/delete_vector/{vector_id}")
     return response.json()
 
 def update_vector_elem(vector_id, index, new_value):
-    url = f"http://127.0.0.1:8000/update_vector_element/{vector_id}/{index}"
-    # url = f"http://fastapi_app:8000/update_vector_element/{vector_id}/{index}"
+    # url = f"http://127.0.0.1:8000/update_vector_element/{vector_id}/{index}"
+    url = f"http://fastapi_app:8000/update_vector_element/{vector_id}/{index}"
     headers = {"Content-Type": "application/json"}
     body = {"value": new_value}
     response = requests.put(url, headers=headers, json=body)

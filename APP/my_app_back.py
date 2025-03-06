@@ -6,7 +6,13 @@ import uvicorn
 
 app=FastAPI()
 
-DATABASE_URL=os.environ.get('DATABASE_URL','postgresql://postgres:password@localhost:5432/my_db')
+# DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@localhost:5432/my_db')
+DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@my_pgv_app:5432/my_db')
+
+@app.on_event("startup")
+async def startup_event():
+    print(f"DATABASE_URL: {DATABASE_URL}")
+
 
 def get_db_connection():
     conn=psycopg2.connect(DATABASE_URL)
@@ -23,7 +29,7 @@ async def insert_vector(vector_model: VectorModel):
     conn=get_db_connection()
     cursor=conn.cursor()
     cursor.execute(
-        "INSERT INTO my_table (vector_column) VALUES (%s)",
+        "INSERT INTO items (embedding) VALUES (%s)",
         (vector_model.vector,)
     )
     conn.commit()
@@ -35,7 +41,7 @@ async def insert_vector(vector_model: VectorModel):
 async def get_vectors():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM my_table")
+    cursor.execute("SELECT * FROM items")
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -45,7 +51,7 @@ async def get_vectors():
 async def get_vector(id_vector: int):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT vector_column FROM my_table WHERE id = %s", (id_vector,))
+    cursor.execute("SELECT embediing FROM items WHERE id = %s", (id_vector,))
     result = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -57,7 +63,7 @@ async def get_vector(id_vector: int):
 async def delete__vector(vector_id: int):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM my_table WHERE id = %s", (vector_id,))
+    cursor.execute("DELETE FROM items WHERE id = %s", (vector_id,))
     conn.commit()
     if cursor.rowcount == 0:
         cursor.close()
@@ -71,7 +77,7 @@ async def delete__vector(vector_id: int):
 async def update_vector_element(vector_id: int, index: int, update_element: UpdateElementModel):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT vector_column FROM my_table WHERE id = %s", (vector_id,))
+    cursor.execute("SELECT embedding FROM items WHERE id = %s", (vector_id,))
     result = cursor.fetchone()
     if result is None:
         cursor.close()
@@ -85,7 +91,7 @@ async def update_vector_element(vector_id: int, index: int, update_element: Upda
     new_vector=vector[1:-1].split(',')
     new_vector[index]=str(update_element.value)
     vector=f"[{','.join(new_vector)}]"
-    cursor.execute("UPDATE my_table SET vector_column = %s WHERE id = %s", (vector, vector_id))
+    cursor.execute("UPDATE items SET embedding = %s WHERE id = %s", (vector, vector_id))
     conn.commit()
     cursor.close()
     conn.close()
@@ -95,7 +101,7 @@ async def update_vector_element(vector_id: int, index: int, update_element: Upda
 async def update_vector(vector_id: int, vector_model: VectorModel):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE my_table SET vector_column = %s WHERE id = %s", (vector_model.vector, vector_id))
+    cursor.execute("UPDATE items SET embedding = %s WHERE id = %s", (vector_model.vector, vector_id))
     conn.commit()
     if cursor.rowcount == 0:
         cursor.close()

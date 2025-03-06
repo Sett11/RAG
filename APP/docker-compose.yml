@@ -1,23 +1,30 @@
-version: "3.9"
+version: '3.9'
+
 services:
-  my_pg:
-    image: postgres:17
-    ports:
-      - "5432:5432"  # Порт 5432 открыт для доступа извне
+  my_pgv_app:
+    image: pgvector/pgvector:pg17
+    restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: my_db  # Имя базы данных
+      POSTGRES_DB: my_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./my_app_db.sql:/docker-entrypoint-initdb.d/my_app_db.sql
+
+
   fastapi_app:
     build:
       context: .
       dockerfile: Dockerfile
+    depends_on:
+      - my_pgv_app
     ports:
       - "8000:8000"
     environment:
-      
-    depends_on:
-      - my_pg
+      DATABASE_URL: postgresql://postgres:password@my_pgv_app:5432/my_db
+
   gradio_app:
     build:
       context: .
@@ -27,5 +34,3 @@ services:
       - "7860:7860"
     depends_on:
       - fastapi_app
-    environment:
-      DOCKER_ENV: 1
