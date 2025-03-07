@@ -13,7 +13,6 @@ DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@my_
 async def startup_event():
     print(f"DATABASE_URL: {DATABASE_URL}")
 
-
 def get_db_connection():
     conn=psycopg2.connect(DATABASE_URL)
     return conn
