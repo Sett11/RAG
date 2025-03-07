@@ -14,7 +14,7 @@ services:
       - ./my_app_db.sql:/docker-entrypoint-initdb.d/my_app_db.sql
 
 
-  fastapi_app:
+  fastapi_app: 
     build:
       context: .
       dockerfile: Dockerfile

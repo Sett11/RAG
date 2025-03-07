@@ -2,7 +2,7 @@
 FROM python:3.10-slim
 
 # Установка зависимостей
-WORKDIR /APP
+WORKDIR /APP 
 
 # Скопируйте requirements.txt
 COPY requirements.txt ./ 

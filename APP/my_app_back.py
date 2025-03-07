@@ -2,7 +2,7 @@ from fastapi import FastAPI,HTTPException
 from pydantic import BaseModel
 import psycopg2
 import os
-import uvicorn
+import uvicorn 
 
 app=FastAPI()
 

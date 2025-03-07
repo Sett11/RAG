@@ -1,7 +1,7 @@
 import gradio as gr
 import requests
 
-def insert_vector(vector):
+def insert_vector(vector): 
     vector = [float(x) for x in vector.split(",")]
     # response = requests.post("http://127.0.0.1:8000/insert_vector/", json={"vector": vector})
     response = requests.post("http://fastapi_app:8000/insert_vector/", json={"vector": vector})

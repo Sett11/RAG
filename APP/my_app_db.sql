@@ -1,2 +1,2 @@
 CREATE EXTENSION vector;
-CREATE TABLE items (id bigserial PRIMARY KEY, embedding vector(5));
+CREATE TABLE items (id bigserial PRIMARY KEY, embedding vector(5)); 
