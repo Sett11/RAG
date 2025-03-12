@@ -7,7 +7,7 @@ import uvicorn
 app=FastAPI()
 
 # DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@localhost:5432/my_db')
-DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@my_pgv_app:5432/my_db')
+DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@my_pgv_app:5432/my_emb_db')
 
 def get_db_connection():
     conn=psycopg2.connect(DATABASE_URL)
@@ -16,15 +16,15 @@ def get_db_connection():
 class VectorModel(BaseModel):
     sentence: str
 
-@app.get("/get_vectors/")
-async def get_vectors():
+@app.get("/get_words/")
+async def get_words():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM embeddings")
+    cursor.execute("SELECT * FROM word_emb")
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
-    return {"vectors": rows}
+    return {"words": rows}
 
 
 if __name__ == "__main__":
