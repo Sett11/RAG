@@ -28,13 +28,13 @@ DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@loc
 # cursor.close()
 # conn.close()
 
-conn = psycopg2.connect(DATABASE_URL)
-cursor = conn.cursor()
+conn=psycopg2.connect(DATABASE_URL)
+cursor=conn.cursor()
 
-N,M=10,20
-cursor.execute("SELECT * FROM word_emb WHERE id > %s AND id < %s", (N,M))
+N,M=30,40
+cursor.execute("SELECT * FROM word_emb WHERE id > %s AND id < %s",(N,M))
 
-rows = cursor.fetchall()
+rows=cursor.fetchall()
 for row in rows:
     print(row[0],row[1])
 
