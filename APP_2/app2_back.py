@@ -9,15 +9,12 @@ import ast
 
 app = FastAPI()
 
-# DATABASE_URL = os.environ.get('DATABASE_URL','postgresql://postgres:password@localhost:5432/my_db')
+# DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@pgv_emb_app:5432/my_emb_db') # for launch through Docker 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/my_emb_db')
 
 def get_db_connection():
     conn = psycopg2.connect(DATABASE_URL)
     return conn
-
-class VectorModel(BaseModel):
-    sentence: str
 
 def get_vector_for_word(word: str):
     conn = get_db_connection()
