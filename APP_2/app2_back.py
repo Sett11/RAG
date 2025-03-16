@@ -1,5 +1,4 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import FastAPI,HTTPException
 import psycopg2
 import os
 import uvicorn
@@ -9,8 +8,8 @@ import ast
 
 app = FastAPI()
 
-# DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@pgv_emb_app:5432/my_emb_db') # for launch through Docker 
-DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/my_emb_db')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@pgv_emb_app:5432/my_emb_db') # for launch through Docker 
+# DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://postgres:password@localhost:5432/my_emb_db')
 
 def get_db_connection():
     conn = psycopg2.connect(DATABASE_URL)
@@ -27,7 +26,7 @@ def get_vector_for_word(word: str):
     conn.close()
 
     if result is None:
-        raise HTTPException(status_code=404, detail="Word not found in database")
+        raise HTTPException(status_code=404,detail="Word not found in database")
 
     vector = np.array(ast.literal_eval(result[0])).astype('float32')
     return vector
@@ -47,7 +46,7 @@ async def get_words(word: str, quantity: int):
     index.add(embeddings)
 
     k = quantity + 1
-    D, I = index.search(np.array([word_vector]), k)  # Ищем k ближайших
+    D, I = index.search(np.array([word_vector]), k)
 
     similar_words = [rows[i][0] for i in I[0]]
 
