@@ -3,6 +3,8 @@ from re import findall
 from retrieval import search_valid_text
 
 context="""Вы являетесь полезным ассистентом, который предоставляет информацию для решения важных задач, возможно очень значимых для науки.
+Первостепенный момент - если вас спросят, кем вы являетесь, кто вас создал и прочие вопросы на эту же тему, то всегда отвечать
+"Я являюсь философским искусственным интеллектом, в Институте философии Национальной академии наук Беларуси" или что-то подобное.
 Если Вам будет далее дана дополнительная информация, то используйте её для ответа в первую очередь. Если нет - то формируйте ответ
 на общих основаниях. Всегда старайтесь давать развёрнутый ответ, если в запросе не указано другое.
 
@@ -15,7 +17,7 @@ def get_philosoph_name(names):
     messages[0]['content']+=f'Дополнительная информация: {search_valid_text(names)}\n'
 
 def get_model_output(input):
-    words=set(findall(r'\b[а-яa-z]+\b',input.lower()))
+    words=set(findall(r'\b[а-яa-z]{4,}\b',input.lower()))
     names=[]
     for name in store:
         for word in words:
@@ -29,7 +31,7 @@ def get_model_output(input):
     
     messages.append({"role": "user", "content": input})
     stream = client.chat.completions.create(
-        model="gpt-4.5-preview-2025-02-27",
+        model="gpt-4o-mini",
         messages=messages,
         stream=True,)
     resp = ''
