@@ -7,12 +7,17 @@ def get_resp_model_from_back(input):
     return out.json()
 
 with gr.Blocks() as app:
-    gr.Markdown("## ФИЛОСОФСКИЕ ДИАЛОГИ",elem_id="title")
-    image_background = gr.Image(value="images\image_philosophy.png", type="pil", width='100',height='100',interactive=False, visible=True)
+    gr.Markdown("## О ФИЛОСОФАХ И ИХ ФИЛОСОФИИ",elem_id="title")
+    image_background = gr.Image(value="images\image_philosophy.png", type="pil", width='100', height='100', interactive=False, visible=True)
 
-    input_get_1 = gr.Textbox(label='Задавайте свой вопрос', placeholder='Ключевые аспекты понятия гармонии в работах Э.М. Сороко')
-    output_get = gr.Textbox(label='Истина где-то рядом...', placeholder='подумаем...')
-    get_btn=gr.Button('попытка - не пытка')
+    input_get_1 = gr.Textbox(label='Изначально скажите, какой философ Вам интересен, а потом спросите меня о нём)',
+                             placeholder='Пример: "ключевые аспекты понятия гармонии в работах Э.М. Сороко"')
+    get_btn=gr.Button('попробуем..?')
+    output_get = gr.Textbox(label='Извините, пожалуйста, за время ожидания - мне тоже нужно подумать)',
+                            autoscroll=True,
+                            show_copy_button=True,
+                            max_lines=100,
+                            placeholder='посмотрим ка...')
 
     with gr.Row():
         with gr.Column(scale=1):
