@@ -24,3 +24,5 @@ venv/
 *.csv
 *.json
 *.yaml
+
+config.py

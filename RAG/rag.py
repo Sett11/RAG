@@ -1,38 +1,26 @@
 # общие библиотеки
-from typing import List, Optional, Dict, Any
-from glob import glob
-import faiss
+from typing import List, Optional
 import numpy as np
 from functools import lru_cache
 import os
-from pathlib import Path
-import shutil
-import logging
 
 # библиотеки для работы с LLM
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import EmbeddingsFilter
-from langchain.retrievers import MergerRetriever
 from langchain_openai import ChatOpenAI
-from langchain.retrievers import EnsembleRetriever
 from sentence_transformers import CrossEncoder, SentenceTransformer
 from langchain_community.vectorstores import FAISS
+from langchain.embeddings.base import Embeddings
 
 from utils.mylogger import Logger
 from config import Config_LLM, docs_dir
 
 # Настройка логирования
 logger = Logger('RAG', 'logs/rag.log')
-
-# Отключаем использование transformers
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_HUB_OFFLINE"] = "1"
 
 class AdvancedRAG:
     """
@@ -46,7 +34,8 @@ class AdvancedRAG:
     - Расширенная обработка ошибок
     """
 
-    def __init__(self, model_name: str = None,
+    def __init__(self,
+                 model_name: str = None,
                  api_key: Optional[str] = None,
                  base_url: str = None,
                  temperature: float = 0.3):
@@ -66,6 +55,12 @@ class AdvancedRAG:
         if not model_name:
             raise ValueError("model_name не может быть пустым")
         
+        if not api_key:
+            raise ValueError("api_key не может быть пустым")
+        
+        if not base_url:
+            raise ValueError("base_url не может быть пустым")
+
         try:
             # Инициализация LLM
             self.llm = ChatOpenAI(
@@ -75,24 +70,20 @@ class AdvancedRAG:
                 temperature=temperature
             )
             logger.info(f"LLM модель {model_name} успешно инициализирована")
-
             # Инициализация модели эмбеддингов
             try:
-                # Используем только sentence-transformers
+                # Используем sentence-transformers
                 import torch
-                
                 # Устанавливаем устройство
                 device = 'cuda' if torch.cuda.is_available() else 'cpu'
                 logger.info(f"Используем устройство: {device}")
-                
                 # Инициализируем модель
                 self.sentence_transformer = SentenceTransformer(
                     "sergeyzh/LaBSE-ru-turbo",
                     device=device
                 )
-                
                 # Создаем класс-обертку для совместимости с LangChain
-                class CustomEmbeddings:
+                class CustomEmbeddings(Embeddings):
                     def __init__(self, model):
                         self.model = model
                     
@@ -268,65 +259,67 @@ class AdvancedRAG:
         skipped_files = 0
 
         try:
+            # Извлекаем расширения файлов из паттернов
+            extensions = []
             for pattern in file_patterns:
-                # Получаем директорию из паттерна
-                directory = os.path.dirname(pattern)
-                
-                # Проверяем существование и доступ к директории
-                if not self._check_directory_exists(directory):
-                    logger.warning(f"Пропускаем паттерн {pattern}: директория не существует")
-                    continue
-                
-                if not self._check_directory_access(directory):
-                    logger.warning(f"Пропускаем паттерн {pattern}: нет доступа к директории")
-                    continue
+                # Получаем расширение из паттерна
+                ext = os.path.splitext(pattern)[1].lower()
+                if ext:
+                    extensions.append(ext)
+            
+            # Получаем базовую директорию из первого паттерна
+            base_dir = os.path.dirname(file_patterns[0])
+            
+            # Проверяем существование и доступ к директории
+            if not self._check_directory_exists(base_dir):
+                logger.warning(f"Пропускаем директорию {base_dir}: директория не существует")
+                return documents
+            
+            if not self._check_directory_access(base_dir):
+                logger.warning(f"Пропускаем директорию {base_dir}: нет доступа к директории")
+                return documents
+            
+            # Рекурсивно ищем файлы с указанными расширениями
+            for root, _, files in os.walk(base_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_ext = os.path.splitext(file_path)[1].lower()
+                    
+                    # Проверяем, соответствует ли расширение файла одному из искомых
+                    if file_ext in extensions:
+                        try:
+                            # Проверяем права доступа к файлу
+                            if not self._check_file_access(file_path):
+                                logger.warning(f"Пропускаем файл без прав доступа: {file_path}")
+                                skipped_files += 1
+                                continue
 
-                # Находим все файлы по паттерну
-                files = glob(pattern)
-                if not files:
-                    logger.warning(f"Не найдено файлов по паттерну: {pattern}")
-                    continue
+                            # Загружаем документ в зависимости от формата
+                            if file_path.lower().endswith('.pdf'):
+                                loader = PyPDFLoader(file_path)
+                            elif file_path.lower().endswith('.txt'):
+                                loader = TextLoader(file_path)
+                            elif file_path.lower().endswith('.docx'):
+                                loader = Docx2txtLoader(file_path)
+                            else:
+                                logger.warning(f"Неподдерживаемый формат файла: {file_path}")
+                                skipped_files += 1
+                                continue
 
-                for file_path in files:
-                    try:
-                        # Проверяем формат файла
-                        if not self._is_supported_format(file_path):
-                            logger.warning(f"Пропускаем неподдерживаемый формат файла: {file_path}")
+                            # Загружаем документ
+                            docs = loader.load()
+                            if docs:
+                                documents.extend(docs)
+                                loaded_files += 1
+                                logger.info(f"Успешно загружен файл: {file_path}")
+                            else:
+                                logger.warning(f"Файл не содержит текста: {file_path}")
+                                skipped_files += 1
+
+                        except Exception as e:
+                            logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
                             skipped_files += 1
                             continue
-
-                        # Проверяем права доступа к файлу
-                        if not self._check_file_access(file_path):
-                            logger.warning(f"Пропускаем файл без прав доступа: {file_path}")
-                            skipped_files += 1
-                            continue
-
-                        # Загружаем документ в зависимости от формата
-                        if file_path.lower().endswith('.pdf'):
-                            loader = PyPDFLoader(file_path)
-                        elif file_path.lower().endswith('.txt'):
-                            loader = TextLoader(file_path)
-                        elif file_path.lower().endswith('.docx'):
-                            loader = Docx2txtLoader(file_path)
-                        else:
-                            logger.warning(f"Неподдерживаемый формат файла: {file_path}")
-                            skipped_files += 1
-                            continue
-
-                        # Загружаем документ
-                        docs = loader.load()
-                        if docs:
-                            documents.extend(docs)
-                            loaded_files += 1
-                            logger.info(f"Успешно загружен файл: {file_path}")
-                        else:
-                            logger.warning(f"Файл не содержит текста: {file_path}")
-                            skipped_files += 1
-
-                    except Exception as e:
-                        logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
-                        skipped_files += 1
-                        continue
 
             if not documents:
                 raise FileNotFoundError("Не удалось загрузить ни одного документа")
@@ -443,7 +436,7 @@ class AdvancedRAG:
 
                     # Создаем индекс FAISS
                     dimension = len(embeddings[0])
-                    index = faiss.IndexFlatL2(dimension)
+                    index = FAISS.IndexFlatL2(dimension)
                     index.add(np.array(embeddings).astype('float32'))
 
                     # Создаем векторное хранилище
@@ -476,16 +469,16 @@ class AdvancedRAG:
         """
         if not self.vectorstore:
             raise ValueError("Векторное хранилище не инициализировано")
-
+        search_kwargs = {
+            "k": 20,
+            "score_threshold": 0.5
+        }
         try:
             # Настраиваем базовый ретривер
             try:
                 self.base_retriever = self.vectorstore.as_retriever(
                     search_type="similarity_score_threshold",
-                    search_kwargs={
-                        "k": 20,
-                        "score_threshold": 0.7
-                    }
+                    search_kwargs=search_kwargs
                 )
                 logger.info("Базовый ретривер успешно настроен")
             except Exception as e:
@@ -493,12 +486,9 @@ class AdvancedRAG:
                 logger.info("Пробуем настроить базовый ретривер вручную")
 
                 try:
-                    # Используем стандартный метод as_retriever вместо FAISSRetriever
-                    self.base_retriever = self.vectorstore.as_retriever(
-                        search_kwargs={
-                            "k": 20,
-                            "score_threshold": 0.7
-                        }
+                    # Используем FAISSRetriever
+                    self.base_retriever = self.vectorstore.FAISSRetriever(
+                        search_kwargs=search_kwargs
                     )
                     logger.info("Базовый ретривер успешно настроен вручную")
                 except Exception as e:
@@ -813,11 +803,16 @@ try:
         print("Пожалуйста, проверьте настройки векторного хранилища.")
         raise
     
-    # Тестовый запрос
+    # Тестовые запросы
     try:
-        print("Выполняем тестовый запрос...")
-        response = gpt.query("Какие документы есть в хранилище?")
-        print(f"Ответ: {response}")
+        print("Выполняем тестовые запросы...")
+        user_question = input("Введите ваш вопрос: ")
+        while user_question != "exit":
+            print(f"Выполняем запрос: {user_question}")
+            response = gpt.query(user_question)
+            print(f"Ответ: {response}")
+            logger.info(f"Ответ: {response}")
+            user_question = input("Введите ваш вопрос: ")
     except Exception as e:
         error_msg = f"Ошибка выполнения тестового запроса: {str(e)}"
         logger.error(error_msg)

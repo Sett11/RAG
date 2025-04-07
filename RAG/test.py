@@ -1,19 +1,17 @@
 from langchain_openai import ChatOpenAI
-import os
 from config import Config_LLM
 
-config = Config_LLM()
+# Инициализация конфигурации
+llm_config = Config_LLM()
 
-# Отключаем использование transformers
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["HF_HUB_OFFLINE"] = "1"
-
-# Инициализация ChatOpenAI
+# Создание экземпляра ChatOpenAI без параметра proxies
 llm = ChatOpenAI(
-    model=config.model_name,
-    api_key=config.api_key,
-    base_url=config.base_url,
-    temperature=config.temperature
+    model=llm_config.model_name,
+    api_key=llm_config.api_key,
+    base_url=llm_config.base_url,
+    temperature=llm_config.temperature
 )
 
-print("ChatOpenAI успешно инициализирован") 
+# Тестовый запрос
+response = llm.invoke("Привет, как дела?")
+print(response) 
