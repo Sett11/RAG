@@ -13,3 +13,14 @@ venv/
 
 # Logs
 *.log
+
+# Документы
+*.pdf
+*.txt
+*.docx
+*.pptx
+*.xlsx
+*.xls
+*.csv
+*.json
+*.yaml
