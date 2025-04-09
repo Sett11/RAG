@@ -4,8 +4,8 @@ from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 
 from utils.mylogger import Logger
-from check_dir import CheckDirExists
-from check_file import CheckFile
+from src.handle_dir_and_files.check_dir import CheckDirExists
+from src.handle_dir_and_files.check_file import CheckFile
 
 logger = Logger('LoadDocuments', 'logs/rag.log')
 
@@ -13,7 +13,7 @@ class LoadDocuments:
     def __init__(self, file_patterns: List[str]) -> None:
         self.file_patterns = file_patterns
         self.check_dir = CheckDirExists(file_patterns[0])
-        self.check_file = CheckFile(file_patterns[0])
+        self.check_file = CheckFile()
 
     def _get_supported_formats(self) -> List[str]:
         """

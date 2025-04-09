@@ -8,7 +8,10 @@ class CheckDirExists:
     Класс для проверки существования и доступа к директории.
     """
     def __init__(self, dir_path: str):
-        self.dir_path = dir_path
+        # Извлекаем базовую директорию из пути с шаблоном файла
+        self.dir_path = os.path.dirname(dir_path)
+        if not self.dir_path:  # Если путь не содержит директорию
+            self.dir_path = dir_path
 
     def check_directory_exists(self):
         try:

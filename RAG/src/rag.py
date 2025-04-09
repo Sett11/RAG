@@ -1,20 +1,15 @@
 # общие библиотеки
-from typing import List, Optional
-import numpy as np
-from functools import lru_cache
-import os
+from typing import Optional
 # библиотеки для работы с LLM
-from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import EmbeddingsFilter
 from langchain_openai import ChatOpenAI
 from sentence_transformers import CrossEncoder, SentenceTransformer
 import torch
 # локальные библиотеки
 from utils.mylogger import Logger
-from src.work_models.retriever import Retriever
-from src.db.vector_store import VectorStore
+from src.retrieval.retriever import Retriever
+from src.date.vector_store import VectorStore
+from src.promts.promts import Promts
+from src.format_context.format_context import FormatContext
 # Настройка логирования
 logger = Logger('RAG', 'logs/rag.log')
 
@@ -80,165 +75,10 @@ class AdvancedRAG:
             logger.info("Cross-encoder успешно инициализирован")
             self.vectorstore = VectorStore(self)
             self.retriever = Retriever(self)
-            self.retriever.setup_retrievers()
-            self.setup_prompts()
+            self.promts = Promts(self)
+            self.format_context = FormatContext(self)
         except Exception as e:
             logger.error(f"Ошибка инициализации компонентов: {str(e)}")
-            raise
-
-    def setup_prompts(self) -> None:
-        """
-        Настройка промптов для LLM.
-        
-        Создает два основных промпта:
-        1. main_prompt - для генерации ответов
-        2. verification_prompt - для проверки качества ответов
-        """
-        try:
-            self.main_prompt = ChatPromptTemplate.from_messages([
-                ("system", """Ты - экспертный русскоязычный AI-ассистент. Анализируй вопрос и контекст, следуя шагам:
-1. Определи ключевые аспекты вопроса
-2. Выдели релевантные части контекста
-3. Сформулируй точный ответ
-4. Если нужно, укажи источник информации
-
-Контекст:
-{context}
-
-Вопрос: {question}"""),
-                ("human", "{question}")
-            ])
-            
-            self.verification_prompt = ChatPromptTemplate.from_messages([
-                ("system", """Проверь соответствие ответа контексту. Ответ должен:
-1. Быть основан только на контексте
-2. Не содержать вымышленных фактов
-3. Быть точным и конкретным
-
-Контекст: {context}
-Ответ для проверки: {response}"""),
-                ("human", "Требуется ли корректировка ответа? Если да, предложи улучшенную версию.")
-            ])
-            logger.info("Промпты успешно настроены")
-        except Exception as e:
-            logger.error(f"Ошибка настройки промптов: {str(e)}")
-            raise
-
-    def rerank_documents(self, question: str, documents: List[Document]) -> List[Document]:
-        """
-        Реранжирование документов с использованием cross-encoder.
-
-        Args:
-            question (str): Вопрос пользователя
-            documents (List[Document]): Список документов для реранжирования
-
-        Returns:
-            List[Document]: Отсортированный список документов
-
-        Raises:
-            ValueError: Если список документов пуст
-            Exception: При ошибках реранжирования
-        """
-        if not documents:
-            raise ValueError("Список документов не может быть пустым")
-        try:
-            # Подготавливаем пары вопрос-документ
-            try:
-                pairs = [(question, doc.page_content) for doc in documents]
-                logger.info(f"Подготовлено {len(pairs)} пар для реранжирования")
-            except Exception as e:
-                logger.error(f"Ошибка при подготовке пар для реранжирования: {str(e)}")
-                raise
-            # Получаем оценки релевантности
-            try:
-                scores = self.cross_encoder.predict(pairs)
-                logger.info("Оценки релевантности успешно получены")
-            except Exception as e:
-                logger.error(f"Ошибка при получении оценок релевантности: {str(e)}")
-                raise
-            # Сортируем документы по оценкам
-            try:
-                # Создаем список пар (документ, оценка)
-                doc_score_pairs = list(zip(documents, scores))
-                # Сортируем по убыванию оценки
-                doc_score_pairs.sort(key=lambda x: x[1], reverse=True)
-                # Извлекаем только документы
-                reranked_docs = [doc for doc, _ in doc_score_pairs]
-                logger.info("Документы успешно реранжированы")
-                return reranked_docs
-            except Exception as e:
-                logger.error(f"Ошибка при сортировке документов: {str(e)}")
-                raise
-        except Exception as e:
-            logger.error(f"Критическая ошибка при реранжировании документов: {str(e)}")
-            raise
-
-    def format_context(self, docs: List[Document]) -> str:
-        """
-        Форматирование контекста из документов для LLM.
-
-        Args:
-            docs (List[Document]): Список документов
-
-        Returns:
-            str: Отформатированный контекст
-
-        Raises:
-            ValueError: Если список документов пуст
-            Exception: При ошибках форматирования
-        """
-        if not docs:
-            raise ValueError("Список документов не может быть пустым")
-        try:
-            # Подготавливаем контекст
-            try:
-                context_parts = []
-                for i, doc in enumerate(docs, 1):
-                    # Очищаем текст от лишних пробелов и переносов строк
-                    cleaned_text = ' '.join(doc.page_content.split())
-                    # Добавляем метаданные, если они есть
-                    metadata_str = ""
-                    if doc.metadata:
-                        source = doc.metadata.get('source', 'Неизвестный источник')
-                        page = doc.metadata.get('page', '')
-                        metadata_str = f" [Источник: {source}"
-                        if page:
-                            metadata_str += f", Страница: {page}"
-                        metadata_str += "]"
-                    # Форматируем часть контекста
-                    context_part = f"Документ {i}{metadata_str}:\n{cleaned_text}\n"
-                    context_parts.append(context_part)
-                # Объединяем все части
-                context = "\n".join(context_parts)
-                logger.info("Контекст успешно отформатирован")
-                return context
-            except Exception as e:
-                logger.error(f"Ошибка при форматировании контекста: {str(e)}")
-                raise
-        except Exception as e:
-            logger.error(f"Критическая ошибка при форматировании контекста: {str(e)}")
-            raise
-
-    @lru_cache(maxsize=1000)
-    def get_embedding(self, text: str) -> List[float]:
-        """
-        Получение эмбеддинга для текста с кэшированием.
-
-        Args:
-            text (str): Текст для получения эмбеддинга
-
-        Returns:
-            List[float]: Вектор эмбеддинга
-
-        Raises:
-            ValueError: Если текст пустой
-        """
-        if not text.strip():
-            raise ValueError("Текст не может быть пустым")
-        try:
-            return self.embedding_model.embed_query(text)
-        except Exception as e:
-            logger.error(f"Ошибка получения эмбеддинга: {str(e)}")
             raise
 
     def query(self, question: str) -> str:
@@ -259,13 +99,16 @@ class AdvancedRAG:
             raise ValueError("Вопрос не может быть пустым")
         try:
             # Проверяем инициализацию ретривера
-            if not self.retriever:
+            if not hasattr(self, 'retriever') or not self.retriever:
                 error_msg = "Ретривер не инициализирован"
                 logger.error(error_msg)
                 return "Извините, система не готова к обработке запросов. Пожалуйста, проверьте логи."
             # Получаем релевантные документы
             try:
+                question = question.lower()
+                # Используем базовый ретривер
                 relevant_docs = self.retriever.get_relevant_documents(question)
+                
                 if not relevant_docs:
                     logger.warning("Не найдено релевантных документов")
                     return "Извините, не удалось найти информацию по вашему запросу."
@@ -275,7 +118,7 @@ class AdvancedRAG:
                 return "Извините, произошла ошибка при поиске информации. Пожалуйста, попробуйте позже."
             # Реранжируем документы
             try:
-                reranked_docs = self.rerank_documents(question, relevant_docs)
+                reranked_docs = self.promts.rerank_documents(question, relevant_docs)
                 if not reranked_docs:
                     logger.warning("Реранжирование не вернуло документов")
                     reranked_docs = relevant_docs
@@ -286,7 +129,7 @@ class AdvancedRAG:
                 reranked_docs = relevant_docs
             # Форматируем контекст
             try:
-                context = self.format_context(reranked_docs)
+                context = self.format_context.format_context(reranked_docs)
                 if not context:
                     logger.warning("Не удалось сформатировать контекст")
                     return "Извините, не удалось обработать найденную информацию."
@@ -296,12 +139,19 @@ class AdvancedRAG:
                 return "Извините, произошла ошибка при обработке информации. Пожалуйста, попробуйте позже."
             # Генерируем ответ
             try:
-                response = self.llm.invoke(
-                    self.main_prompt.format(
-                        context=context,
-                        question=question
+                # Проверяем инициализацию промптов
+                if not hasattr(self, 'main_prompt') or not self.main_prompt:
+                    logger.warning("Промпты не инициализированы, используем стандартный промпт")
+                    response = self.llm.invoke(
+                        f"Контекст:\n{context}\n\nВопрос: {question}"
                     )
-                )            
+                else:
+                    response = self.llm.invoke(
+                        self.main_prompt.format(
+                            context=context,
+                            question=question
+                        )
+                    )            
                 if not response or not response.content:
                     logger.warning("LLM вернул пустой ответ")
                     return "Извините, не удалось сгенерировать ответ. Пожалуйста, попробуйте переформулировать вопрос."

@@ -2,26 +2,19 @@ from langchain_core.documents import Document
 from typing import List
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.embeddings.base import Embeddings
 import numpy as np
 
-from src.rag import AdvancedRAG
 from utils.mylogger import Logger
-from src.work_models.custom_embeddings import CustomEmbeddings
+from src.embedded.custom_embeddings import CustomEmbeddings
+from config import RAG_CONFIG
 
 logger = Logger('VectorStore', 'logs/rag.log')
 
 class VectorStore:
-    def __init__(self, llm: AdvancedRAG) -> None:
+    def __init__(self, llm) -> None:
         self.llm = llm
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=512,
-            chunk_overlap=128,
-            length_function=len,
-            is_separator_regex=False,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-        self.embedding_model = CustomEmbeddings(Embeddings)
+        self.text_splitter = RecursiveCharacterTextSplitter(**RAG_CONFIG["text_splitter"])
+        self.embedding_model = CustomEmbeddings(llm.sentence_transformer)
 
     def create_vector_store(self, documents: List[Document]) -> None:
         """
