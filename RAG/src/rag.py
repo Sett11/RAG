@@ -144,6 +144,49 @@ class AdvancedRAG:
             logger.error(f"Ошибка инициализации компонентов: {str(e)}")
             raise
 
+    def extract_answer(self, response: str) -> str:
+        """
+        Извлекает точный ответ из полного ответа модели.
+        
+        Процесс извлечения:
+        1. Проверяет наличие тегов <perfect_answer> и </perfect_answer>
+        2. Если теги найдены, извлекает текст между ними
+        3. Если теги не найдены, проверяет наличие тегов <answer> и </answer>
+        4. Если теги найдены, извлекает текст между ними
+        5. Если ничего не найдено, возвращает строку "Ответ не найден"
+        
+        Args:
+            response (str): Полный ответ модели
+            
+        Returns:
+            str: Извлеченный точный ответ
+        """
+        try:
+            # Проверяем наличие тегов <perfect_answer> и </perfect_answer>
+            start_tag = "<perfect_answer>"
+            end_tag = "</perfect_answer>"
+            start_index = response.find(start_tag)
+            end_index = response.find(end_tag)
+            if start_index != -1 and end_index != -1:
+                logger.info("Найден улучшенный ответ")
+                return response[start_index + len(start_tag):end_index]
+
+            # Проверяем наличие тегов <answer> и </answer>
+            start_tag = "<answer>"
+            end_tag = "</answer>"
+            start_index = response.find(start_tag)
+            end_index = response.find(end_tag)
+            if start_index != -1 and end_index != -1:
+                logger.info("Найден ответ")
+                return response[start_index + len(start_tag):end_index]
+            
+            logger.info("Ответ не найден")
+            return "Ответ не найден"
+        
+        except Exception as e:
+            logger.error(f"Ошибка при извлечении точного ответа: {str(e)}")
+            return "Ответ не найден"
+
     def verification_query(self, question: str, response: str, context: str) -> tuple[bool, str]:
         """
         Проверяет качество сгенерированного ответа.
@@ -151,8 +194,8 @@ class AdvancedRAG:
         Процесс верификации:
         1. Проверяет наличие промпта верификации
         2. Отправляет запрос к LLM с контекстом, вопросом и ответом
-        3. Анализирует ответ верификатора
-        4. При необходимости извлекает улучшенную версию ответа
+        3. Возвращает ответ верификатора
+
 
         Args:
             question (str): Исходный вопрос пользователя
@@ -160,12 +203,12 @@ class AdvancedRAG:
             context (str): Контекст, использованный для генерации
 
         Returns:
-            tuple[bool, str]: (требуется_ли_корректировка, полный_ответ)
+            str: Ответ модели
         """
         try:
             if not hasattr(self, 'verification_prompt'):
                 logger.warning("Промпт верификации не инициализирован")
-                return False, response
+                return response
 
             verification_response = self.llm.invoke(
                 self.verification_prompt.format(
@@ -177,93 +220,13 @@ class AdvancedRAG:
 
             if not verification_response or not verification_response.content:
                 logger.warning("Верификатор вернул пустой ответ")
-                return False, response
+                return response
 
-            # Анализируем ответ верификатора
-            content = verification_response.content.lower()
-            logger.info(f"Ответ верификатора: {content}")
-            needs_correction = "да" in content or "требуется" in content
-            improved_response = response
-
-            if needs_correction:
-                # Проверяем наличие тегов <answer> и </answer>
-                start_tag = "<answer>"
-                end_tag = "</answer>"
-                
-                start_idx = content.find(start_tag)
-                if start_idx != -1:
-                    start_idx += len(start_tag)
-                    end_idx = content.find(end_tag, start_idx)
-                    
-                    if end_idx != -1:
-                        logger.info("Найдена улучшенная версия ответа в тегах <answer> и </answer>")
-                        improved_text = content[start_idx:end_idx].strip()
-                        # Заменяем текст между тегами <answer> и </answer> в исходном ответе
-                        if "<answer>" in response and "</answer>" in response:
-                            response_start = response.find("<answer>") + len("<answer>")
-                            response_end = response.find("</answer>", response_start)
-                            improved_response = response[:response_start] + improved_text + response[response_end:]
-                        else:
-                            # Если в исходном ответе нет тегов, добавляем их
-                            improved_response = f"{response}\n\n<answer>{improved_text}</answer>"
-                        return needs_correction, improved_response
-                    else:
-                        logger.warning("Найден открывающий тег <answer>, но не найден закрывающий тег </answer>")
-                
-                # Если теги не найдены, ищем "улучшенная версия:"
-                improved_start = content.find("улучшенная версия:")
-                if improved_start != -1:
-                    # Извлекаем текст после "улучшенная версия:"
-                    improved_text = content[improved_start:].split("\n")[0].replace("улучшенная версия:", "").strip()
-                    
-                    # Если улучшенный текст слишком короткий, попробуем получить больше текста
-                    if len(improved_text) < 50:
-                        # Ищем следующий раздел или конец текста
-                        next_section = content.find("**", improved_start + len("улучшенная версия:"))
-                        if next_section != -1:
-                            improved_text = content[improved_start + len("улучшенная версия:"):next_section].strip()
-                        else:
-                            # Если нет следующего раздела, берем весь текст до конца
-                            improved_text = content[improved_start + len("улучшенная версия:"):].strip()
-                    
-                    # Заменяем текст между тегами <answer> и </answer> в исходном ответе
-                    if "<answer>" in response and "</answer>" in response:
-                        response_start = response.find("<answer>") + len("<answer>")
-                        response_end = response.find("</answer>", response_start)
-                        improved_response = response[:response_start] + improved_text + response[response_end:]
-                    else:
-                        # Если в исходном ответе нет тегов, добавляем их
-                        improved_response = f"{response}\n\n<answer>{improved_text}</answer>"
-                else:
-                    # Если не нашли маркер "улучшенная версия:", попробуем найти сам ответ
-                    # Обычно он идет после "вот" или "это"
-                    for marker in ["вот", "это"]:
-                        marker_pos = content.find(marker)
-                        if marker_pos != -1:
-                            # Берем текст после маркера до следующего раздела или конца
-                            next_section = content.find("**", marker_pos)
-                            if next_section != -1:
-                                improved_text = content[marker_pos + len(marker):next_section].strip()
-                            else:
-                                improved_text = content[marker_pos + len(marker):].strip()
-                            
-                            if improved_text:
-                                # Заменяем текст между тегами <answer> и </answer> в исходном ответе
-                                if "<answer>" in response and "</answer>" in response:
-                                    response_start = response.find("<answer>") + len("<answer>")
-                                    response_end = response.find("</answer>", response_start)
-                                    improved_response = response[:response_start] + improved_text + response[response_end:]
-                                else:
-                                    # Если в исходном ответе нет тегов, добавляем их
-                                    improved_response = f"{response}\n\n<answer>{improved_text}</answer>"
-                                break
-
-            logger.info(f"Верификация ответа: {'требуется корректировка' if needs_correction else 'ответ приемлем'}")
-            return needs_correction, improved_response
+            return verification_response.content
 
         except Exception as e:
             logger.error(f"Ошибка при верификации ответа: {str(e)}")
-            return False, response
+            return response
 
     def query(self, question: str) -> str:
         """
@@ -281,7 +244,7 @@ class AdvancedRAG:
             question (str): Вопрос пользователя
 
         Returns:
-            str: Полный ответ модели
+            str: Ответ модели
         """
         try:
             if not question.strip():
@@ -321,30 +284,16 @@ class AdvancedRAG:
                 logger.warning("LLM вернул пустой ответ")
                 return "Извините, произошла ошибка при генерации ответа"
 
-            # Проверяем наличие тегов <answer> и </answer>
-            if "<answer>" in response.content and "</answer>" in response.content:
-                logger.info("Ответ содержит теги <answer> и </answer>")
-                return response.content
-
-            # Если тегов нет, проверяем качество ответа
-            needs_correction, improved_response = self.verification_query(
+            logger.info(f"Изначальный ответ: {response.content}")
+            improved_response = self.verification_query(
                 question=question,
                 response=response.content,
                 context=context
             )
-
-            if needs_correction:
-                logger.info("Ответ был улучшен в процессе верификации")
-                return improved_response
-
-            # Если ответ не требует корректировки, добавляем теги
-            if "<answer>" not in response.content and "</answer>" not in response.content:
-                # Ищем точный ответ в тексте
-                exact_answer = self.extract_exact_answer(response.content)
-                if exact_answer:
-                    return f"{response.content}\n\n<answer>{exact_answer}</answer>"
-
-            return response.content
+            logger.info(f"Улучшенный ответ: {improved_response}")
+            exact_answer = self.extract_answer(improved_response)
+            logger.info(f"Точный ответ: {exact_answer}")
+            return exact_answer
 
         except Exception as e:
             logger.error(f"Ошибка при обработке запроса: {str(e)}")
