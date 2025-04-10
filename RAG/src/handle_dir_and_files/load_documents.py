@@ -10,9 +10,31 @@ from src.handle_dir_and_files.check_file import CheckFile
 logger = Logger('LoadDocuments', 'logs/rag.log')
 
 class LoadDocuments:
+    """
+    Класс для загрузки документов из различных форматов файлов.
+    
+    Этот класс предоставляет функциональность для:
+    - Загрузки документов из PDF, TXT и DOCX файлов
+    - Проверки существования и доступа к файлам и директориям
+    - Фильтрации неподдерживаемых форматов
+    - Обработки ошибок при загрузке документов
+    
+    Attributes:
+        file_patterns (List[str]): Список паттернов для поиска файлов
+        check_dir (CheckDirExists): Объект для проверки директорий
+        check_file (CheckFile): Объект для проверки файлов
+    """
     def __init__(self, file_patterns: List[str]) -> None:
+        """
+        Инициализация класса LoadDocuments.
+        
+        Args:
+            file_patterns (List[str]): Список паттернов для поиска файлов
+        """
+        logger.info("Инициализация класса LoadDocuments")
         self.file_patterns = file_patterns
-        self.check_dir = CheckDirExists(file_patterns[0])
+        logger.debug(f"Получены паттерны для поиска файлов: {file_patterns}")
+        self.check_dir = CheckDirExists()
         self.check_file = CheckFile()
 
     def _get_supported_formats(self) -> List[str]:
@@ -22,6 +44,7 @@ class LoadDocuments:
         Returns:
             List[str]: Список расширений файлов
         """
+        logger.debug("Получение списка поддерживаемых форматов")
         return ['.pdf', '.txt', '.docx']
 
     def _is_supported_format(self, file_path: str) -> bool:
@@ -34,14 +57,25 @@ class LoadDocuments:
         Returns:
             bool: True, если формат поддерживается, иначе False
         """
-        return any(file_path.lower().endswith(fmt) for fmt in self._get_supported_formats())
+        # Если путь указывает на директорию, считаем его поддерживаемым
+        if os.path.isdir(file_path):
+            return True
+            
+        supported_formats = self._get_supported_formats()
+        is_supported = any(file_path.lower().endswith(fmt) for fmt in supported_formats)
+        logger.debug(f"Проверка формата файла {file_path}: {'поддерживается' if is_supported else 'не поддерживается'}")
+        return is_supported
 
     def load_documents(self) -> List[Document]:
         """
         Загрузка документов из указанных файловых паттернов.
 
-        Args:
-            file_patterns (List[str]): Список паттернов для поиска файлов
+        Процесс загрузки:
+        1. Проверка существования и доступа к директории
+        2. Рекурсивный поиск файлов с поддерживаемыми расширениями
+        3. Проверка прав доступа к каждому файлу
+        4. Загрузка документов в зависимости от формата
+        5. Обработка ошибок при загрузке
 
         Returns:
             List[Document]: Список загруженных документов
@@ -51,56 +85,69 @@ class LoadDocuments:
             FileNotFoundError: Если не найдено ни одного файла
             Exception: При ошибках загрузки документов
         """
+        logger.info("Начало загрузки документов")
+        
         if not self.file_patterns:
-            raise ValueError("Список паттернов файлов не может быть пустым")
+            error_msg = "Список паттернов файлов не может быть пустым"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+            
         documents = []
         loaded_files = 0
         skipped_files = 0
+        
         try:
-            # Извлекаем расширения файлов из паттернов
-            extensions = []
-            for pattern in self.file_patterns:
-                # Получаем расширение из паттерна
-                if not self._is_supported_format(pattern):
-                    logger.warning(f"Неподдерживаемый формат файла: {pattern}")
-                    skipped_files += 1
-                    continue
-                ext = os.path.splitext(pattern)[1].lower()
-                if ext:
-                    extensions.append(ext)
             # Получаем базовую директорию из первого паттерна
-            base_dir = os.path.dirname(self.file_patterns[0])
+            base_dir = self.file_patterns[0]
+            logger.debug(f"Базовая директория для поиска: {base_dir}")
+            
             # Проверяем существование и доступ к директории
-            if not self.check_dir.check_directory_exists():
+            if not self.check_dir.check_dir_exists(base_dir):
                 logger.warning(f"Пропускаем директорию {base_dir}: директория не существует")
                 return documents
-            if not self.check_dir.check_directory_access():
+                
+            if not self.check_dir.check_dir_access(base_dir):
                 logger.warning(f"Пропускаем директорию {base_dir}: нет доступа к директории")
                 return documents
-            # Рекурсивно ищем файлы с указанными расширениями
+                
+            # Рекурсивно ищем файлы с поддерживаемыми расширениями
+            logger.info(f"Начало рекурсивного поиска файлов в директории {base_dir}")
+            
+            # Получаем список поддерживаемых расширений
+            supported_formats = self._get_supported_formats()
+            
+            # Рекурсивно обходим директорию
             for root, _, files in os.walk(base_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     file_ext = os.path.splitext(file_path)[1].lower()
-                    # Проверяем, соответствует ли расширение файла одному из искомых
-                    if file_ext in extensions:
+                    
+                    # Проверяем, соответствует ли расширение файла одному из поддерживаемых
+                    if file_ext in supported_formats:
                         try:
+                            logger.debug(f"Обработка файла: {file_path}")
+                            
                             # Проверяем права доступа к файлу
                             if not self.check_file.check_file_access(file_path):
                                 logger.warning(f"Пропускаем файл без прав доступа: {file_path}")
                                 skipped_files += 1
                                 continue
+                                
                             # Загружаем документ в зависимости от формата
                             if file_path.lower().endswith('.pdf'):
+                                logger.debug(f"Загрузка PDF файла: {file_path}")
                                 loader = PyPDFLoader(file_path)
                             elif file_path.lower().endswith('.txt'):
+                                logger.debug(f"Загрузка TXT файла: {file_path}")
                                 loader = TextLoader(file_path)
                             elif file_path.lower().endswith('.docx'):
+                                logger.debug(f"Загрузка DOCX файла: {file_path}")
                                 loader = Docx2txtLoader(file_path)
                             else:
                                 logger.warning(f"Неподдерживаемый формат файла: {file_path}")
                                 skipped_files += 1
                                 continue
+                                
                             # Загружаем документ
                             docs = loader.load()
                             if docs:
@@ -110,14 +157,20 @@ class LoadDocuments:
                             else:
                                 logger.warning(f"Файл не содержит текста: {file_path}")
                                 skipped_files += 1
+                                
                         except Exception as e:
                             logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
                             skipped_files += 1
                             continue
+                            
             if not documents:
-                raise FileNotFoundError("Не удалось загрузить ни одного документа")
+                error_msg = "Не удалось загрузить ни одного документа"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+                
             logger.info(f"Загрузка завершена. Загружено: {loaded_files}, пропущено: {skipped_files}")
             return documents
+
         except Exception as e:
             logger.error(f"Критическая ошибка при загрузке документов: {str(e)}")
             raise
