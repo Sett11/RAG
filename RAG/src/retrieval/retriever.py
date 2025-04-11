@@ -3,6 +3,7 @@ from langchain.retrievers.document_compressors import EmbeddingsFilter
 from src.embedded.custom_embeddings import CustomEmbeddings
 from utils.mylogger import Logger
 from config import RAG_CONFIG
+import asyncio
 
 logger = Logger('Retriever', 'logs/rag.log')
 
@@ -33,7 +34,36 @@ class Retriever:
         self.embedding_model = CustomEmbeddings(llm.sentence_transformer)
         logger.debug("Компоненты Retriever успешно инициализированы")
 
-    def setup_retrievers(self) -> None:
+    async def get_relevant_documents_async(self, query: str):
+        """
+        Асинхронно получает релевантные документы для запроса.
+        
+        Args:
+            query (str): Текстовый запрос пользователя
+            
+        Returns:
+            List[Document]: Список релевантных документов
+        """
+        try:
+            logger.debug(f"Асинхронный поиск документов для запроса: {query[:100]}...")
+            # Используем to_thread для асинхронного выполнения синхронного метода
+            documents = await asyncio.to_thread(
+                self.llm.retriever.get_relevant_documents,
+                query
+            )
+            logger.info(f"Найдено {len(documents)} релевантных документов")
+            return documents
+        except Exception as e:
+            logger.error(f"Ошибка при поиске документов: {str(e)}")
+            raise
+
+    def get_relevant_documents(self, query: str):
+        """
+        Синхронная обертка для получения релевантных документов
+        """
+        return asyncio.run(self.get_relevant_documents_async(query))
+
+    async def setup_retrievers_async(self) -> None:
         """
         Настройка системы ретриверов для поиска документов.
         
@@ -55,32 +85,24 @@ class Retriever:
             raise ValueError(error_msg)
             
         try:
-            # Настраиваем базовый ретривер для LLM
+            # Настраиваем базовый ретривер
             try:
-                logger.debug("Попытка настройки базового ретривера стандартным методом")
-                self.llm.base_retriever = self.vectorstore.llm.vectorstore.as_retriever(
+                logger.debug("Настройка базового ретривера")
+                # Используем векторное хранилище из llm, а не из vectorstore
+                self.llm.base_retriever = self.llm.vectorstore.as_retriever(
                     search_type="similarity_score_threshold",
                     search_kwargs=RAG_CONFIG["search_kwargs"]
                 )
                 logger.info("Базовый ретривер успешно настроен")
             except Exception as e:
-                logger.warning(f"Не удалось настроить базовый ретривер стандартным методом: {str(e)}")
-                logger.info("Пробуем настроить базовый ретривер вручную")
-                try:
-                    # Используем FAISSRetriever
-                    self.llm.base_retriever = self.llm.vectorstore.FAISSRetriever(
-                        vectorstore=self.vectorstore.llm.vectorstore,
-                        search_kwargs=RAG_CONFIG["search_kwargs"]
-                    )
-                    logger.info("Базовый ретривер успешно настроен вручную")
-                except Exception as e:
-                    logger.error(f"Ошибка при настройке базового ретривера вручную: {str(e)}")
-                    raise
-                    
+                logger.error(f"Ошибка при настройке базового ретривера: {str(e)}")
+                raise
+                
             # Настраиваем фильтр по эмбеддингам для LLM
             try:
                 logger.debug("Настройка фильтра по эмбеддингам")
-                embeddings_filter = EmbeddingsFilter(
+                embeddings_filter = await asyncio.to_thread(
+                    EmbeddingsFilter,
                     embeddings=self.embedding_model,
                     similarity_threshold=RAG_CONFIG["similarity_threshold"]
                 )
@@ -94,7 +116,8 @@ class Retriever:
             try:
                 logger.debug("Создание компресионного ретривера")
                 if embeddings_filter:
-                    self.llm.retriever = ContextualCompressionRetriever(
+                    self.llm.retriever = await asyncio.to_thread(
+                        ContextualCompressionRetriever,
                         base_compressor=embeddings_filter,
                         base_retriever=self.llm.base_retriever
                     )
@@ -110,6 +133,12 @@ class Retriever:
             logger.info("Настройка системы ретриверов успешно завершена")
             
         except Exception as e:
-            logger.error(f"Критическая ошибка при настройке ретриверов: {str(e)}")
+            logger.error(f"Ошибка при настройке системы ретриверов: {str(e)}")
             raise
+
+    def setup_retrievers(self) -> None:
+        """
+        Синхронная обертка для настройки системы ретриверов
+        """
+        asyncio.run(self.setup_retrievers_async())
 

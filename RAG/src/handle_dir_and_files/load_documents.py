@@ -1,5 +1,7 @@
 from typing import List
 import os
+import asyncio
+import aiofiles
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 
@@ -66,9 +68,40 @@ class LoadDocuments:
         logger.debug(f"Проверка формата файла {file_path}: {'поддерживается' if is_supported else 'не поддерживается'}")
         return is_supported
 
-    def load_documents(self) -> List[Document]:
+    async def _load_single_document(self, file_path: str) -> List[Document]:
         """
-        Загрузка документов из указанных файловых паттернов.
+        Асинхронно загружает один документ.
+        """
+        try:
+            if file_path.lower().endswith('.pdf'):
+                logger.debug(f"Загрузка PDF файла: {file_path}")
+                loader = PyPDFLoader(file_path)
+            elif file_path.lower().endswith('.txt'):
+                logger.debug(f"Загрузка TXT файла: {file_path}")
+                loader = TextLoader(file_path)
+            elif file_path.lower().endswith('.docx'):
+                logger.debug(f"Загрузка DOCX файла: {file_path}")
+                loader = Docx2txtLoader(file_path)
+            else:
+                logger.warning(f"Неподдерживаемый формат файла: {file_path}")
+                return []
+
+            # Загружаем документ
+            docs = loader.load()
+            if docs:
+                logger.info(f"Успешно загружен файл: {file_path}")
+                return docs
+            else:
+                logger.warning(f"Файл не содержит текста: {file_path}")
+                return []
+
+        except Exception as e:
+            logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
+            return []
+
+    async def load_documents_async(self) -> List[Document]:
+        """
+        Асинхронная загрузка документов из указанных файловых паттернов.
 
         Процесс загрузки:
         1. Проверка существования и доступа к директории
@@ -85,7 +118,7 @@ class LoadDocuments:
             FileNotFoundError: Если не найдено ни одного файла
             Exception: При ошибках загрузки документов
         """
-        logger.info("Начало загрузки документов")
+        logger.info("Начало асинхронной загрузки документов")
         
         if not self.file_patterns:
             error_msg = "Список паттернов файлов не может быть пустым"
@@ -110,67 +143,54 @@ class LoadDocuments:
                 logger.warning(f"Пропускаем директорию {base_dir}: нет доступа к директории")
                 return documents
                 
-            # Рекурсивно ищем файлы с поддерживаемыми расширениями
-            logger.info(f"Начало рекурсивного поиска файлов в директории {base_dir}")
-            
             # Получаем список поддерживаемых расширений
             supported_formats = self._get_supported_formats()
             
-            # Рекурсивно обходим директорию
+            # Собираем все файлы для загрузки
+            files_to_load = []
             for root, _, files in os.walk(base_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     file_ext = os.path.splitext(file_path)[1].lower()
                     
-                    # Проверяем, соответствует ли расширение файла одному из поддерживаемых
                     if file_ext in supported_formats:
-                        try:
-                            logger.debug(f"Обработка файла: {file_path}")
-                            
-                            # Проверяем права доступа к файлу
-                            if not self.check_file.check_file_access(file_path):
-                                logger.warning(f"Пропускаем файл без прав доступа: {file_path}")
-                                skipped_files += 1
-                                continue
-                                
-                            # Загружаем документ в зависимости от формата
-                            if file_path.lower().endswith('.pdf'):
-                                logger.debug(f"Загрузка PDF файла: {file_path}")
-                                loader = PyPDFLoader(file_path)
-                            elif file_path.lower().endswith('.txt'):
-                                logger.debug(f"Загрузка TXT файла: {file_path}")
-                                loader = TextLoader(file_path)
-                            elif file_path.lower().endswith('.docx'):
-                                logger.debug(f"Загрузка DOCX файла: {file_path}")
-                                loader = Docx2txtLoader(file_path)
-                            else:
-                                logger.warning(f"Неподдерживаемый формат файла: {file_path}")
-                                skipped_files += 1
-                                continue
-                                
-                            # Загружаем документ
-                            docs = loader.load()
-                            if docs:
-                                documents.extend(docs)
-                                loaded_files += 1
-                                logger.info(f"Успешно загружен файл: {file_path}")
-                            else:
-                                logger.warning(f"Файл не содержит текста: {file_path}")
-                                skipped_files += 1
-                                
-                        except Exception as e:
-                            logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
+                        if self.check_file.check_file_access(file_path):
+                            files_to_load.append(file_path)
+                        else:
+                            logger.warning(f"Пропускаем файл без прав доступа: {file_path}")
                             skipped_files += 1
-                            continue
-                            
+
+            if not files_to_load:
+                error_msg = "Не найдено файлов для загрузки"
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+
+            # Асинхронно загружаем все документы
+            tasks = [self._load_single_document(file_path) for file_path in files_to_load]
+            results = await asyncio.gather(*tasks)
+            
+            # Объединяем результаты
+            for docs in results:
+                if docs:
+                    documents.extend(docs)
+                    loaded_files += 1
+                else:
+                    skipped_files += 1
+
             if not documents:
                 error_msg = "Не удалось загрузить ни одного документа"
                 logger.error(error_msg)
                 raise FileNotFoundError(error_msg)
-                
-            logger.info(f"Загрузка завершена. Загружено: {loaded_files}, пропущено: {skipped_files}")
+
+            logger.info(f"Асинхронная загрузка завершена. Загружено: {loaded_files}, пропущено: {skipped_files}")
             return documents
 
         except Exception as e:
-            logger.error(f"Критическая ошибка при загрузке документов: {str(e)}")
+            logger.error(f"Критическая ошибка при асинхронной загрузке документов: {str(e)}")
             raise
+
+    def load_documents(self) -> List[Document]:
+        """
+        Синхронная загрузка документов (для обратной совместимости).
+        """
+        return asyncio.run(self.load_documents_async())

@@ -1,5 +1,6 @@
 import os
 from utils.mylogger import Logger
+import asyncio
 
 logger = Logger('CheckDirExists', 'logs/rag.log')
 
@@ -20,9 +21,9 @@ class CheckDirExists:
         """
         logger.info("Инициализация класса CheckDirExists")
 
-    def check_dir_exists(self, dir_path: str) -> bool:
+    async def check_dir_exists_async(self, dir_path: str) -> bool:
         """
-        Проверяет существование директории по указанному пути.
+        Асинхронно проверяет существование директории по указанному пути.
 
         Args:
             dir_path (str): Путь к директории для проверки
@@ -32,7 +33,8 @@ class CheckDirExists:
         """
         try:
             logger.debug(f"Проверка существования директории: {dir_path}")
-            if not os.path.exists(dir_path):
+            exists = await asyncio.to_thread(os.path.exists, dir_path)
+            if not exists:
                 logger.error(f"Директория не существует: {dir_path}")
                 return False
             logger.info(f"Директория существует: {dir_path}")
@@ -40,10 +42,16 @@ class CheckDirExists:
         except Exception as e:
             logger.error(f"Ошибка при проверке директории {dir_path}: {str(e)}")
             return False
-        
-    def check_dir_access(self, dir_path: str) -> bool:
+
+    def check_dir_exists(self, dir_path: str) -> bool:
         """
-        Проверяет права доступа к директории для чтения.
+        Синхронная обертка для проверки существования директории
+        """
+        return asyncio.run(self.check_dir_exists_async(dir_path))
+        
+    async def check_dir_access_async(self, dir_path: str) -> bool:
+        """
+        Асинхронно проверяет права доступа к директории для чтения.
 
         Args:
             dir_path (str): Путь к директории для проверки прав доступа
@@ -53,7 +61,8 @@ class CheckDirExists:
         """
         try:
             logger.debug(f"Проверка прав доступа к директории: {dir_path}")
-            if not os.access(dir_path, os.R_OK):
+            has_access = await asyncio.to_thread(os.access, dir_path, os.R_OK)
+            if not has_access:
                 logger.error(f"Нет прав на чтение директории: {dir_path}")
                 return False
             logger.info(f"Есть права на чтение директории: {dir_path}")
@@ -61,3 +70,9 @@ class CheckDirExists:
         except Exception as e:
             logger.error(f"Ошибка при проверке прав доступа к директории {dir_path}: {str(e)}")
             return False
+
+    def check_dir_access(self, dir_path: str) -> bool:
+        """
+        Синхронная обертка для проверки прав доступа к директории
+        """
+        return asyncio.run(self.check_dir_access_async(dir_path))

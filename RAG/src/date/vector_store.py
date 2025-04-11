@@ -3,6 +3,7 @@ from typing import List
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import numpy as np
+import asyncio
 
 from utils.mylogger import Logger
 from src.embedded.custom_embeddings import CustomEmbeddings
@@ -40,9 +41,9 @@ class VectorStore:
         # Создание модели для генерации эмбеддингов
         self.embedding_model = CustomEmbeddings(llm.sentence_transformer)
 
-    def create_vector_store(self, documents: List[Document]) -> None:
+    async def create_vector_store_async(self, documents: List[Document]) -> None:
         """
-        Создание векторного хранилища из документов.
+        Асинхронное создание векторного хранилища из документов.
 
         Процесс создания:
         1. Разбиение документов на чанки с помощью text_splitter
@@ -77,7 +78,8 @@ class VectorStore:
             # Создаем векторное хранилище
             try:
                 # Пробуем стандартный метод создания FAISS
-                self.llm.vectorstore = FAISS.from_documents(
+                self.llm.vectorstore = await asyncio.to_thread(
+                    FAISS.from_documents,
                     documents=chunks,
                     embedding=self.embedding_model
                 )
@@ -91,7 +93,10 @@ class VectorStore:
                     metadatas = [doc.metadata for doc in chunks]
                     
                     # Получаем векторные представления для всех текстов
-                    embeddings = self.embedding_model.embed_documents(texts)
+                    embeddings = await asyncio.to_thread(
+                        self.embedding_model.embed_documents,
+                        texts
+                    )
                     
                     # Создаем индекс FAISS с размерностью векторов
                     dimension = len(embeddings[0])
@@ -112,3 +117,9 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Критическая ошибка при создании векторного хранилища: {str(e)}")
             raise
+
+    def create_vector_store(self, documents: List[Document]) -> None:
+        """
+        Синхронное создание векторного хранилища из документов.
+        """
+        asyncio.run(self.create_vector_store_async(documents))

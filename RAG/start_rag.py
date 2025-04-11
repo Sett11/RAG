@@ -1,13 +1,13 @@
+import asyncio
+import nest_asyncio
 from typing import List
 from src.rag import AdvancedRAG
 from src.handle_dir_and_files.load_documents import LoadDocuments
 from src.handle_dir_and_files.process_documents import ProcessDocuments
 from utils.mylogger import Logger
 from config import Config_LLM, docs_dir
-import os
 
-# if os.path.exists('logs/rag.log'):
-#     os.remove('logs/rag.log')
+nest_asyncio.apply()
 
 # Инициализация логгера для отслеживания работы приложения
 logger = Logger('Start RAG', 'logs/rag.log')
@@ -41,13 +41,13 @@ def create_LLM(llm, config):
     )
     return LLM
 
-def setting_up_LLM(llm, documents: List[str]):
+async def setting_up_LLM(llm, documents: List[str]):
     """
-    Настраивает LLM для работы с документами.
+    Асинхронно настраивает LLM для работы с документами.
 
     Процесс настройки:
-    1. Загрузка документов из указанных путей
-    2. Обработка документов (разбивка на чанки)
+    1. Асинхронная загрузка документов из указанных путей
+    2. Асинхронная обработка документов (разбивка на чанки)
     3. Создание векторного хранилища
     4. Настройка ретриверов
     5. Настройка промптов
@@ -60,10 +60,10 @@ def setting_up_LLM(llm, documents: List[str]):
     Returns:
         AdvancedRAG: Настроенный экземпляр с загруженными документами
     """
-    # Загрузка документов из файлов
-    loaded_documents = LoadDocuments(documents).load_documents()
-    # Обработка документов (разбивка на чанки)
-    processed_documents = ProcessDocuments(loaded_documents).process_documents()
+    # Асинхронная загрузка документов
+    loaded_documents = await LoadDocuments(documents).load_documents_async()
+    # Асинхронная обработка документов
+    processed_documents = await ProcessDocuments(loaded_documents).process_documents_async()
     # Создание векторного хранилища для быстрого поиска
     llm.vectorstore.create_vector_store(processed_documents)
     # Настройка компонентов для поиска документов
@@ -72,9 +72,20 @@ def setting_up_LLM(llm, documents: List[str]):
     llm.promts.setup_prompts()
     return llm
 
-def main():
+async def process_question(llm: AdvancedRAG, question: str) -> str:
     """
-    Основная функция приложения.
+    Асинхронно обрабатывает вопрос пользователя.
+    """
+    try:
+        response = await llm.query_async(question)
+        return response
+    except Exception as e:
+        logger.error(f"Ошибка при обработке вопроса: {str(e)}")
+        return f"Произошла ошибка: {str(e)}"
+
+async def main():
+    """
+    Асинхронная основная функция приложения.
     
     Процесс работы:
     1. Создание экземпляра AdvancedRAG
@@ -88,24 +99,24 @@ def main():
         # Создание и настройка LLM
         llm = create_LLM(AdvancedRAG, Config_LLM)
         
-        # Настройка LLM для работы с документами
-        llm = setting_up_LLM(llm, [docs_dir])
+        # Асинхронная настройка LLM для работы с документами
+        llm = await setting_up_LLM(llm, [docs_dir])
         
-        # Получение вопроса от пользователя
-        question = input("Введите ваш вопрос: ")
-
-        while question != "exit":
-            # Получение ответа от LLM
-            response = llm.query(question)
+        while True:
+            # Получение вопроса от пользователя
+            question = input("Введите ваш вопрос (или 'exit' для выхода): ")
+            
+            if question.lower() == "exit":
+                break
+                
+            # Асинхронная обработка вопроса
+            response = await process_question(llm, question)
             
             # Выводим ответ
             print("\nОтвет:")
             print("-" * 50)
             print(response)
             print("-" * 50)
-            
-            # Получение нового вопроса
-            question = input("Введите ваш вопрос: ")
         
     except Exception as e:
         logger.error(f"Произошла ошибка: {str(e)}")
@@ -113,4 +124,4 @@ def main():
 
 if __name__ == "__main__":
     logger.info("Запуск приложения")
-    main()
+    asyncio.run(main())

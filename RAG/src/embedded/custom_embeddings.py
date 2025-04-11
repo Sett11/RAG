@@ -1,5 +1,6 @@
 from langchain.embeddings.base import Embeddings
 from utils.mylogger import Logger
+import asyncio
 
 # Инициализация логгера для отслеживания работы с эмбеддингами
 logger = Logger('CustomEmbeddings', 'logs/rag.log')
@@ -24,6 +25,8 @@ class CustomEmbeddings(Embeddings):
     Methods:
         embed_documents: Создает эмбеддинги для списка документов
         embed_query: Создает эмбеддинг для одного запроса
+        embed_documents_async: Асинхронная версия embed_documents
+        embed_query_async: Асинхронная версия embed_query
     """
     def __init__(self, model):
         """
@@ -37,9 +40,9 @@ class CustomEmbeddings(Embeddings):
         self.model = model
         logger.info(f"Инициализация класса CustomEmbeddings. Модель: {model}")
         
-    def embed_documents(self, texts):
+    async def embed_documents_async(self, texts):
         """
-        Создает эмбеддинги для списка текстовых документов.
+        Асинхронно создает эмбеддинги для списка текстовых документов.
         
         Процесс:
         1. Принимает список текстовых документов
@@ -56,12 +59,29 @@ class CustomEmbeddings(Embeddings):
                 Каждый вектор - список чисел с плавающей точкой
                 Все векторы нормализованы (длина = 1)
         """
-        # Нормализуем эмбеддинги для улучшения качества сравнения
-        return self.model.encode(texts, normalize_embeddings=True).tolist()
-        
-    def embed_query(self, text):
+        try:
+            logger.debug(f"Асинхронное создание эмбеддингов для {len(texts)} документов")
+            # Нормализуем эмбеддинги для улучшения качества сравнения
+            embeddings = await asyncio.to_thread(
+                self.model.encode,
+                texts,
+                normalize_embeddings=True
+            )
+            logger.info(f"Успешно созданы эмбеддинги для {len(texts)} документов")
+            return embeddings.tolist()
+        except Exception as e:
+            logger.error(f"Ошибка при создании эмбеддингов: {str(e)}")
+            raise
+
+    def embed_documents(self, texts):
         """
-        Создает эмбеддинг для одного текстового запроса.
+        Синхронная обертка для создания эмбеддингов документов
+        """
+        return asyncio.run(self.embed_documents_async(texts))
+        
+    async def embed_query_async(self, text):
+        """
+        Асинхронно создает эмбеддинг для одного текстового запроса.
         
         Процесс:
         1. Принимает один текстовый запрос
@@ -78,5 +98,22 @@ class CustomEmbeddings(Embeddings):
                 Список чисел с плавающей точкой
                 Вектор нормализован (длина = 1)
         """
-        # Нормализуем эмбеддинг для согласованности с embed_documents
-        return self.model.encode(text, normalize_embeddings=True).tolist() 
+        try:
+            logger.debug(f"Асинхронное создание эмбеддинга для запроса: {text[:100]}...")
+            # Нормализуем эмбеддинг для согласованности с embed_documents
+            embedding = await asyncio.to_thread(
+                self.model.encode,
+                text,
+                normalize_embeddings=True
+            )
+            logger.info("Успешно создан эмбеддинг для запроса")
+            return embedding.tolist()
+        except Exception as e:
+            logger.error(f"Ошибка при создании эмбеддинга для запроса: {str(e)}")
+            raise
+
+    def embed_query(self, text):
+        """
+        Синхронная обертка для создания эмбеддинга запроса
+        """
+        return asyncio.run(self.embed_query_async(text)) 

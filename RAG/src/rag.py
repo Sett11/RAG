@@ -1,5 +1,6 @@
 # общие библиотеки
 from typing import Optional
+from tenacity import retry, stop_after_attempt, wait_exponential
 # библиотеки для работы с LLM
 from langchain_openai import ChatOpenAI
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -143,6 +144,75 @@ class AdvancedRAG:
         except Exception as e:
             logger.error(f"Ошибка инициализации компонентов: {str(e)}")
             raise
+        
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=15))
+    async def query_async(self, question: str) -> str:
+        """
+        Асинхронно обрабатывает запрос пользователя.
+        """
+        try:
+            if not question.strip():
+                return "Вопрос не может быть пустым"
+
+            # Асинхронный поиск релевантных документов
+            relevant_docs = await self.retriever.get_relevant_documents_async(question)
+            
+            # Асинхронное реранжирование документов
+            reranked_docs = await self.promts.rerank_documents_async(question, relevant_docs)
+            
+            # Форматирование контекста
+            context = self.format_context.format_context(reranked_docs)
+            
+            # Асинхронная генерация ответа
+            response = await self.llm.ainvoke(
+                self.main_prompt.format(
+                    context=context,
+                    question=question
+                )
+            )
+            
+            if not response or not response.content:
+                return "Не удалось сгенерировать ответ"
+            
+            # Извлечение точного ответа
+            answer = self.extract_answer(response.content)
+            
+            # Асинхронная верификация ответа
+            verified_response = await self.verification_query_async(question, answer, context)
+            
+            return verified_response
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обработке запроса: {str(e)}")
+            return f"Произошла ошибка при обработке запроса: {str(e)}"
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=15))
+    async def verification_query_async(self, question: str, response: str, context: str) -> str:
+        """
+        Асинхронно проверяет качество сгенерированного ответа.
+        """
+        try:
+            if not hasattr(self, 'verification_prompt'):
+                logger.warning("Промпт верификации не инициализирован")
+                return response
+
+            verification_response = await self.llm.ainvoke(
+                self.verification_prompt.format(
+                    context=context,
+                    question=question,
+                    response=response
+                )
+            )
+
+            if not verification_response or not verification_response.content:
+                logger.warning("Верификатор вернул пустой ответ")
+                return response
+
+            return verification_response.content
+
+        except Exception as e:
+            logger.error(f"Ошибка при верификации ответа: {str(e)}")
+            return response
 
     def extract_answer(self, response: str) -> str:
         """
@@ -186,115 +256,3 @@ class AdvancedRAG:
         except Exception as e:
             logger.error(f"Ошибка при извлечении точного ответа: {str(e)}")
             return "Ответ не найден"
-
-    def verification_query(self, question: str, response: str, context: str) -> tuple[bool, str]:
-        """
-        Проверяет качество сгенерированного ответа.
-
-        Процесс верификации:
-        1. Проверяет наличие промпта верификации
-        2. Отправляет запрос к LLM с контекстом, вопросом и ответом
-        3. Возвращает ответ верификатора
-
-
-        Args:
-            question (str): Исходный вопрос пользователя
-            response (str): Сгенерированный ответ
-            context (str): Контекст, использованный для генерации
-
-        Returns:
-            str: Ответ модели
-        """
-        try:
-            if not hasattr(self, 'verification_prompt'):
-                logger.warning("Промпт верификации не инициализирован")
-                return response
-
-            verification_response = self.llm.invoke(
-                self.verification_prompt.format(
-                    context=context,
-                    question=question,
-                    response=response
-                )
-            )
-
-            if not verification_response or not verification_response.content:
-                logger.warning("Верификатор вернул пустой ответ")
-                return response
-
-            return verification_response.content
-
-        except Exception as e:
-            logger.error(f"Ошибка при верификации ответа: {str(e)}")
-            return response
-
-    def query(self, question: str) -> str:
-        """
-        Обрабатывает запрос пользователя.
-
-        Процесс обработки запроса:
-        1. Поиск релевантных документов
-        2. Переранжирование документов
-        3. Форматирование контекста
-        4. Генерация ответа с помощью LLM
-        5. Верификация качества ответа
-        6. При необходимости корректировка ответа
-
-        Args:
-            question (str): Вопрос пользователя
-
-        Returns:
-            str: Ответ модели
-        """
-        try:
-            if not question.strip():
-                raise ValueError("Вопрос не может быть пустым")
-
-            if not self.retriever:
-                logger.error("Retriever не инициализирован")
-                return "Ошибка: система не готова к работе"
-
-            # Поиск релевантных документов
-            docs = self.retriever.get_relevant_documents(question)
-            if not docs:
-                logger.warning("Не найдено релевантных документов")
-                return "Извините, я не нашел информации по вашему вопросу"
-
-            # Переранжирование документов
-            reranked_docs = self.promts.rerank_documents(question, docs)
-            if not reranked_docs:
-                logger.warning("Не удалось переранжировать документы")
-                return "Извините, произошла ошибка при обработке документов"
-
-            # Форматирование контекста
-            context = self.format_context.format_context(reranked_docs)
-            if not context:
-                logger.warning("Не удалось отформатировать контекст")
-                return "Извините, произошла ошибка при подготовке контекста"
-
-            # Генерация ответа
-            response = self.llm.invoke(
-                self.main_prompt.format(
-                    context=context,
-                    question=question
-                )
-            )
-
-            if not response or not response.content:
-                logger.warning("LLM вернул пустой ответ")
-                return "Извините, произошла ошибка при генерации ответа"
-
-            logger.info(f"Изначальный ответ: {response.content}")
-            improved_response = self.verification_query(
-                question=question,
-                response=response.content,
-                context=context
-            )
-            logger.info(f"Улучшенный ответ: {improved_response}")
-            exact_answer = self.extract_answer(improved_response)
-            logger.info(f"Точный ответ: {exact_answer}")
-            return exact_answer
-
-        except Exception as e:
-            logger.error(f"Ошибка при обработке запроса: {str(e)}")
-            return f"Произошла ошибка: {str(e)}"
