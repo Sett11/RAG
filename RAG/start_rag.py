@@ -83,7 +83,7 @@ async def process_question(llm: AdvancedRAG, question: str) -> str:
         logger.error(f"Ошибка при обработке вопроса: {str(e)}")
         return f"Произошла ошибка: {str(e)}"
 
-async def main():
+async def main(docs_dir: str):
     """
     Асинхронная основная функция приложения.
     
@@ -124,4 +124,4 @@ async def main():
 
 if __name__ == "__main__":
     logger.info("Запуск приложения")
-    asyncio.run(main())
+    asyncio.run(main(docs_dir))

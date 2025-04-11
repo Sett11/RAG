@@ -11,6 +11,7 @@ from src.retrieval.retriever import Retriever
 from src.date.vector_store import VectorStore
 from src.promts.promts import Promts
 from src.format_context.format_context import FormatContext
+import asyncio
 # Настройка логирования
 logger = Logger('RAG', 'logs/rag.log')
 
@@ -154,8 +155,11 @@ class AdvancedRAG:
             if not question.strip():
                 return "Вопрос не может быть пустым"
 
-            # Асинхронный поиск релевантных документов
-            relevant_docs = await self.retriever.get_relevant_documents_async(question)
+            # Асинхронный поиск релевантных документов через to_thread
+            relevant_docs = await asyncio.to_thread(
+                self.retriever.get_relevant_documents,
+                question
+            )
             
             # Асинхронное реранжирование документов
             reranked_docs = await self.promts.rerank_documents_async(question, relevant_docs)
@@ -208,7 +212,7 @@ class AdvancedRAG:
                 logger.warning("Верификатор вернул пустой ответ")
                 return response
 
-            return verification_response.content
+            return self.extract_answer(verification_response.content)
 
         except Exception as e:
             logger.error(f"Ошибка при верификации ответа: {str(e)}")
@@ -238,7 +242,7 @@ class AdvancedRAG:
             start_index = response.find(start_tag)
             end_index = response.find(end_tag)
             if start_index != -1 and end_index != -1:
-                logger.info("Найден улучшенный ответ")
+                logger.info(f"Найден улучшенный ответ: {response[start_index + len(start_tag):end_index]}")
                 return response[start_index + len(start_tag):end_index]
 
             # Проверяем наличие тегов <answer> и </answer>
@@ -247,7 +251,7 @@ class AdvancedRAG:
             start_index = response.find(start_tag)
             end_index = response.find(end_tag)
             if start_index != -1 and end_index != -1:
-                logger.info("Найден ответ")
+                logger.info(f"Найден ответ: {response[start_index + len(start_tag):end_index]}")
                 return response[start_index + len(start_tag):end_index]
             
             logger.info("Ответ не найден")
