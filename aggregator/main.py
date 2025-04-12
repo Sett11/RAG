@@ -10,10 +10,14 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message, ContentType
 from aiogram.enums import ChatType
+from aiogram.exceptions import TelegramAPIError
 import dotenv
 import nest_asyncio
 import redis.asyncio as redis
+from redis.exceptions import ConnectionError, TimeoutError, RedisError
 from pydantic import BaseModel
+import tenacity
+from functools import wraps
 
 # локальные модули
 from utils.mylogger import Logger
@@ -30,6 +34,52 @@ logger.debug("Переменные окружения загружены")
 # Применение nest_asyncio для решения проблем с вложенными циклами событий
 nest_asyncio.apply()
 logger.debug("nest_asyncio применен")
+
+# Декораторы для повторных попыток
+def retry_redis(func):
+    """Декоратор для повторных попыток при ошибках Redis"""
+    @wraps(func)
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_exponential(multiplier=1, min=4, max=10),
+        retry=tenacity.retry_if_exception_type((ConnectionError, TimeoutError, RedisError)),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Ошибка Redis: {retry_state.outcome.exception()}. Повторная попытка {retry_state.attempt_number}/3"
+        )
+    )
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+    return wrapper
+
+def retry_telegram(func):
+    """Декоратор для повторных попыток при ошибках Telegram API"""
+    @wraps(func)
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_exponential(multiplier=1, min=4, max=10),
+        retry=tenacity.retry_if_exception_type(TelegramAPIError),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Ошибка Telegram API: {retry_state.outcome.exception()}. Повторная попытка {retry_state.attempt_number}/3"
+        )
+    )
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+    return wrapper
+
+def retry_external(func):
+    """Декоратор для повторных попыток при общих ошибках внешних запросов"""
+    @wraps(func)
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(3),
+        wait=tenacity.wait_exponential(multiplier=1, min=4, max=10),
+        retry=tenacity.retry_if_exception_type((ConnectionError, TimeoutError, TelegramAPIError, RedisError)),
+        before_sleep=lambda retry_state: logger.warning(
+            f"Ошибка внешнего запроса: {retry_state.outcome.exception()}. Повторная попытка {retry_state.attempt_number}/3"
+        )
+    )
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+    return wrapper
 
 # Конфигурация
 class Config:
@@ -101,6 +151,9 @@ class ChannelAggregatorBot:
         
         # Обработчики сообщений
         self.dp.message.register(self.handle_message, F.text & ~F.command)
+        
+        # Обработчик сообщений из каналов и групп
+        self.dp.channel_post.register(self.handle_channel_update)
         self.dp.message.register(
             self.handle_channel_update, 
             F.chat.type.in_({ChatType.CHANNEL, ChatType.GROUP, ChatType.SUPERGROUP})
@@ -114,6 +167,7 @@ class ChannelAggregatorBot:
         logger.debug(f"Получено сообщение: {message.text if message.text else 'Нет текста'}, "
                     f"тип: {message.content_type}, от: {message.from_user.id if message.from_user else 'Неизвестно'}")
     
+    @retry_telegram
     async def start(self, message: Message) -> None:
         """
         Обработчик команды /start.
@@ -129,6 +183,7 @@ class ChannelAggregatorBot:
             "ℹ️ Используй /help для списка команд."
         )
     
+    @retry_telegram
     async def help(self, message: Message) -> None:
         """
         Обработчик команды /help.
@@ -146,6 +201,7 @@ class ChannelAggregatorBot:
         )
         await message.answer(help_text)
     
+    @retry_external
     async def list_channels(self, message: Message) -> None:
         """
         Обработчик команды /list.
@@ -174,6 +230,7 @@ class ChannelAggregatorBot:
         logger.debug(f"Отправка списка из {len(channels_info)} каналов")
         await message.answer(f"📋 Ваши подписки:\n{channels_list}")
     
+    @retry_external
     async def unsubscribe(self, message: Message) -> None:
         """
         Обработчик команды /unsubscribe.
@@ -200,6 +257,7 @@ class ChannelAggregatorBot:
         await self.remove_user_subscription(user_id, channel_info.id)
         await message.answer(f"✅ Вы отписались от канала {channel_info.name}.")
     
+    @retry_external
     async def handle_message(self, message: Message) -> None:
         """
         Обработчик текстовых сообщений (ссылок на каналы).
@@ -223,15 +281,27 @@ class ChannelAggregatorBot:
             return
         
         # Проверка доступа бота к каналу
-        # try:
-        #     chat_member = await self.bot.get_chat_member(chat_id=channel_info.id, user_id=self.bot.id)
-        #     if chat_member.status not in ['administrator', 'member', 'creator']:
-        #         await message.answer("⚠️ Бот не имеет доступа к этому каналу. Добавьте бота в канал как администратора.")
-        #         return
-        # except Exception as e:
-        #     logger.error(f"Ошибка проверки доступа к каналу: {e}")
-        #     await message.answer("⚠️ Не удалось проверить доступ к каналу. Убедитесь, что бот добавлен в канал.")
-        #     return
+        try:
+            chat_member = await self.bot.get_chat_member(chat_id=channel_info.id, user_id=self.bot.id)
+            if chat_member.status not in ['administrator', 'member', 'creator']:
+                await message.answer(
+                    "⚠️ Бот не имеет доступа к этому каналу.\n\n"
+                    "Для получения сообщений из канала, пожалуйста:\n"
+                    "1. Добавьте бота в канал как участника\n"
+                    "2. После этого повторите подписку на канал\n\n"
+                    "❗️ Важно: Бот должен быть участником канала, чтобы получать сообщения."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Ошибка проверки доступа к каналу: {e}")
+            await message.answer(
+                "⚠️ Не удалось проверить доступ к каналу.\n\n"
+                "Для получения сообщений из канала, пожалуйста:\n"
+                "1. Добавьте бота в канал как участника\n"
+                "2. После этого повторите подписку на канал\n\n"
+                "❗️ Важно: Бот должен быть участником канала, чтобы получать сообщения."
+            )
+            return
         
         # Добавление подписки
         await self.save_channel_info(channel_info)
@@ -243,6 +313,7 @@ class ChannelAggregatorBot:
             f"📢 Теперь вы будете получать его обновления."
         )
     
+    @retry_external
     async def handle_channel_update(self, message: Message) -> None:
         """
         Обработчик новых сообщений в каналах.
@@ -304,6 +375,7 @@ class ChannelAggregatorBot:
                 await self.remove_user_subscription(user_id, channel_id)
     
     # Redis методы
+    @retry_redis
     async def save_channel_info(self, channel_info: ChannelInfo) -> None:
         """Сохраняет информацию о канале в Redis"""
         await self.redis.hset(
@@ -315,6 +387,7 @@ class ChannelAggregatorBot:
             }
         )
     
+    @retry_redis
     async def get_channel_info(self, channel_id: str) -> Optional[ChannelInfo]:
         """Получает информацию о канале из Redis"""
         data = await self.redis.hgetall(f"channel:{channel_id}")
@@ -328,35 +401,42 @@ class ChannelAggregatorBot:
             type=ChatType(data.get(b'type', b'').decode())
         )
     
+    @retry_redis
     async def is_channel_tracked(self, channel_id: str) -> bool:
         """Проверяет, отслеживается ли канал кем-либо"""
         subscribers = await self.get_channel_subscribers(channel_id)
         return len(subscribers) > 0
     
+    @retry_redis
     async def add_user_subscription(self, user_id: str, channel_id: str) -> None:
         """Добавляет подписку пользователя на канал"""
         await self.redis.sadd(f"user:{user_id}:subscriptions", channel_id)
         await self.redis.sadd(f"channel:{channel_id}:subscribers", user_id)
     
+    @retry_redis
     async def remove_user_subscription(self, user_id: str, channel_id: str) -> None:
         """Удаляет подписку пользователя на канал"""
         await self.redis.srem(f"user:{user_id}:subscriptions", channel_id)
         await self.redis.srem(f"channel:{channel_id}:subscribers", user_id)
     
+    @retry_redis
     async def get_user_subscriptions(self, user_id: int) -> List[str]:
         """Получает список подписок пользователя"""
         members = await self.redis.smembers(f"user:{user_id}:subscriptions")
         return [channel_id.decode() for channel_id in members]
     
+    @retry_redis
     async def get_channel_subscribers(self, channel_id: str) -> List[str]:
         """Получает список подписчиков канала"""
         return [user_id.decode() async for user_id in await self.redis.smembers(f"channel:{channel_id}:subscribers")]
     
+    @retry_redis
     async def is_user_subscribed(self, user_id: str, channel_id: str) -> bool:
         """Проверяет, подписан ли пользователь на канал"""
         return await self.redis.sismember(f"user:{user_id}:subscriptions", channel_id)
     
     # Вспомогательные методы
+    @retry_telegram
     async def parse_telegram_link(self, link: str) -> Optional[ChannelInfo]:
         """
         Парсит ссылку на телеграм канал/чат и получает информацию о нем.
@@ -393,6 +473,7 @@ class ChannelAggregatorBot:
             logger.error(f"Ошибка при получении информации о канале: {e}")
             return None
     
+    @retry_external
     async def run(self):
         """
         Запускает бота и начинает обработку сообщений.
