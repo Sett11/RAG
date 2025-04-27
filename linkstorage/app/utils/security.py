@@ -121,8 +121,12 @@ def change_password(db: Session, user: User, new_password: str):
     :param user: Объект пользователя.
     :param new_password: Новый пароль.
     """
-    # Хэшируем новый пароль и сохраняем его в БД
-    user.hashed_password = get_password_hash(new_password)
+    # Загружаем пользователя из БД по id, чтобы объект был привязан к текущей сессии
+    db_user = db.query(User).filter(User.id == user.id).first()
+    if db_user is None:
+        logger.warning(f"Пользователь не найден для смены пароля: {user.id}")
+        raise HTTPException(status_code=404, detail="User not found")
+    db_user.hashed_password = get_password_hash(new_password)
     db.commit()
-    db.refresh(user)
-    logger.info(f"Пользователь сменил пароль: {user.email}") 
+    db.refresh(db_user)
+    logger.info(f"Пользователь сменил пароль: {db_user.email}") 

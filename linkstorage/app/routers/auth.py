@@ -4,6 +4,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from ..database import get_db
 from ..schemas.user import UserCreate, UserResponse, Token
 from ..crud.user import create_user, authenticate_user
@@ -25,10 +26,13 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     :param db: Сессия БД.
     :return: Данные зарегистрированного пользователя.
     """
-    # Создаём пользователя в базе данных через функцию crud
-    db_user = create_user(db, user)
+    try:
+        db_user = create_user(db, user)
+    except IntegrityError:
+        db.rollback()
+        logger.warning(f"Попытка регистрации с уже существующим email: {user.email}")
+        raise HTTPException(status_code=409, detail="User with this email already exists")
     logger.info(f"Зарегистрирован пользователь: {db_user.email}")
-    # Возвращаем данные зарегистрированного пользователя
     return db_user
 
 @router.post("/login", response_model=Token)

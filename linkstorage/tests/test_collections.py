@@ -2,7 +2,7 @@
 Тесты для проверки операций с коллекциями: создание, получение, обновление, удаление.
 """
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from app.main import app
 
 @pytest.mark.asyncio
@@ -10,7 +10,8 @@ async def test_collections_crud():
     """
     Проверяет полный цикл работы с коллекциями для пользователя.
     """
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Регистрация и вход
         await ac.post("/register", json={"email": "colluser@example.com", "password": "collpass"})
         login_resp = await ac.post("/login", data={"username": "colluser@example.com", "password": "collpass"})

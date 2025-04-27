@@ -2,7 +2,7 @@
 Тесты для проверки регистрации, аутентификации и работы токенов.
 """
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from app.main import app
 
 @pytest.mark.asyncio
@@ -10,7 +10,8 @@ async def test_register_and_login(tmp_path):
     """
     Проверяет регистрацию нового пользователя, вход и получение токена.
     """
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Регистрация нового пользователя
         response = await ac.post("/register", json={"email": "testuser@example.com", "password": "testpass123"})
         assert response.status_code == 200

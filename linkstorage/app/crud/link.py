@@ -18,8 +18,10 @@ def create_link(db: Session, link: LinkCreate, user_id: int):
     :param user_id: ID пользователя.
     :return: Объект созданной ссылки.
     """
-    # Формируем объект ссылки на основе данных и ID пользователя
-    db_link = Link(**link.dict(), user_id=user_id)
+    # Преобразуем url в строку, если это HttpUrl
+    link_data = link.model_dump()
+    link_data['url'] = str(link_data['url'])
+    db_link = Link(**link_data, user_id=user_id)
     # Добавляем ссылку в сессию
     db.add(db_link)
     # Фиксируем изменения в базе данных
@@ -66,7 +68,7 @@ def update_link(db: Session, db_link: Link, link: LinkUpdate):
     :return: Обновлённая ссылка.
     """
     # Обновляем только те поля, которые были переданы (partial update)
-    for key, value in link.dict(exclude_unset=True).items():
+    for key, value in link.model_dump(exclude_unset=True).items():
         setattr(db_link, key, value)
     # Фиксируем изменения в базе данных
     db.commit()

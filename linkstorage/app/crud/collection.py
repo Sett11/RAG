@@ -19,7 +19,7 @@ def create_collection(db: Session, collection: CollectionCreate, user_id: int):
     :return: Объект созданной коллекции.
     """
     # Формируем объект коллекции на основе данных и ID пользователя
-    db_collection = Collection(**collection.dict(), user_id=user_id)
+    db_collection = Collection(**collection.model_dump(), user_id=user_id)
     # Добавляем коллекцию в сессию
     db.add(db_collection)
     # Фиксируем изменения в базе данных
@@ -64,7 +64,7 @@ def update_collection(db: Session, db_collection: Collection, collection: Collec
     :return: Обновлённая коллекция.
     """
     # Обновляем только те поля, которые были переданы (partial update)
-    for key, value in collection.dict(exclude_unset=True).items():
+    for key, value in collection.model_dump(exclude_unset=True).items():
         setattr(db_collection, key, value)
     # Фиксируем изменения в базе данных
     db.commit()

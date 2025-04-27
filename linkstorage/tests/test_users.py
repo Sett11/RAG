@@ -2,7 +2,7 @@
 Тесты для проверки пользовательских операций: получение информации о себе и смена пароля.
 """
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from app.main import app
 
 @pytest.mark.asyncio
@@ -10,7 +10,8 @@ async def test_user_info_and_password_change():
     """
     Проверяет получение информации о себе и смену пароля.
     """
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Регистрация и вход
         await ac.post("/register", json={"email": "user2@example.com", "password": "pass12345"})
         login_resp = await ac.post("/login", data={"username": "user2@example.com", "password": "pass12345"})
