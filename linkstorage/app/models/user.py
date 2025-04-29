@@ -3,6 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from .base import Base
 from ..utils.mylogger import Logger, ensure_log_directory
 
@@ -29,6 +30,13 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     # Дата и время последнего обновления пользователя (обновляется автоматически)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Токен для сброса пароля (может быть null)
+    reset_password_token = Column(String, nullable=True)
+    # Срок действия токена сброса пароля (может быть null)
+    reset_password_token_expiration = Column(DateTime(timezone=True), nullable=True)
+
+    links = relationship("Link", back_populates="user", cascade="all, delete-orphan")
+    collections = relationship("Collection", back_populates="user", cascade="all, delete-orphan")
 
     def __init__(self, *args, **kwargs):
         # Инициализация экземпляра пользователя через родительский конструктор

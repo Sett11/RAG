@@ -6,10 +6,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from ..database import get_db
-from ..schemas.user import UserCreate, UserResponse, Token
-from ..crud.user import create_user, authenticate_user
+from ..schemas.user import UserCreate, UserResponse, Token, PasswordResetRequest, PasswordResetConfirm, MessageResponse
+from ..crud.user import create_user, authenticate_user, set_reset_token, verify_reset_token, reset_password
 from ..utils.security import create_access_token
 from ..utils.mylogger import Logger, ensure_log_directory
+from app.models.user import User
 
 # Гарантируем наличие директории для логов и инициализируем логгер
 ensure_log_directory()
@@ -54,3 +55,31 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     logger.info(f"Пользователь вошёл: {user.email}")
     # Возвращаем токен доступа
     return {"access_token": access_token, "token_type": "bearer"}
+
+@router.post("/reset-password/request", response_model=MessageResponse)
+def request_password_reset(data: PasswordResetRequest, db: Session = Depends(get_db)):
+    """
+    Запрос на сброс пароля: генерирует токен и "отправляет" его пользователю (для теста — возвращает в ответе).
+    """
+    user = db.query(User).filter(User.email == data.email).first()
+    if not user:
+        logger.warning(f"Попытка сброса пароля для несуществующего email: {data.email}")
+        # Не раскрываем, что пользователя нет — возвращаем успешный ответ
+        return {"message": "Если email зарегистрирован, инструкция отправлена"}
+    token = set_reset_token(db, user)
+    # В реальном проекте здесь отправляется email с токеном
+    logger.info(f"Токен сброса пароля сгенерирован для: {user.email}")
+    return {"message": f"Токен для сброса пароля: {token}"}
+
+@router.post("/reset-password/confirm", response_model=MessageResponse)
+def confirm_password_reset(data: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """
+    Подтверждение сброса пароля: проверяет токен и устанавливает новый пароль.
+    """
+    user = verify_reset_token(db, data.token)
+    if not user:
+        logger.warning(f"Попытка сброса пароля с невалидным или истёкшим токеном: {data.token}")
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    reset_password(db, user, data.new_password)
+    logger.info(f"Пароль успешно сброшен для пользователя: {user.email}")
+    return {"message": "Пароль успешно сброшен"}

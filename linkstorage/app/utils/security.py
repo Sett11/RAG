@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models.user import User
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional
 from .mylogger import Logger, ensure_log_directory
 
@@ -61,7 +61,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     # Копируем данные для токена
     to_encode = data.copy()
     # Устанавливаем время истечения токена
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     # Кодируем JWT-токен
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)

@@ -3,6 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from .base import Base
 from ..utils.mylogger import Logger, ensure_log_directory
 
@@ -44,9 +45,12 @@ class Link(Base):
     # Дата и время последнего обновления ссылки (обновляется автоматически)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     # ID пользователя-владельца (внешний ключ)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user = relationship("User", back_populates="links")
 
     def __init__(self, *args, **kwargs):
         # Инициализация экземпляра ссылки через родительский конструктор
         super().__init__(*args, **kwargs)
         logger.info(f"Создан экземпляр ссылки: {self.url if hasattr(self, 'url') else 'без url'}")
+
+# ВНИМАНИЕ: После изменения ondelete/cascade необходимо создать новую миграцию Alembic!

@@ -6,10 +6,14 @@ from ..models.user import User
 from ..schemas.user import UserCreate
 from ..utils.security import get_password_hash, verify_password
 from ..utils.mylogger import Logger, ensure_log_directory
+import secrets
+from datetime import datetime, timedelta, UTC
 
 # Гарантируем наличие директории для логов и инициализируем логгер
 ensure_log_directory()
 logger = Logger("crud.user", "logs/app.log")
+
+RESET_TOKEN_EXPIRE_HOURS = 1
 
 def create_user(db: Session, user: UserCreate):
     """
@@ -48,3 +52,55 @@ def authenticate_user(db: Session, email: str, password: str):
     # Если всё успешно — логируем вход пользователя
     logger.info(f"Пользователь аутентифицирован: {email}")
     return user 
+
+def generate_reset_token():
+    """
+    Генерирует криптостойкий токен для сброса пароля.
+    """
+    return secrets.token_urlsafe(32)
+
+def set_reset_token(db: Session, user: User):
+    """
+    Устанавливает токен и срок действия для сброса пароля пользователю.
+    :param db: Сессия БД.
+    :param user: Объект пользователя.
+    :return: Токен сброса пароля.
+    """
+    token = generate_reset_token()
+    expiration = datetime.now(UTC) + timedelta(hours=RESET_TOKEN_EXPIRE_HOURS)
+    user.reset_password_token = token
+    user.reset_password_token_expiration = expiration
+    db.commit()
+    db.refresh(user)
+    logger.info(f"Установлен токен сброса пароля для пользователя: {user.email}")
+    return token
+
+def verify_reset_token(db: Session, token: str):
+    """
+    Проверяет валидность токена сброса пароля и возвращает пользователя.
+    :param db: Сессия БД.
+    :param token: Токен сброса пароля.
+    :return: Объект пользователя или None.
+    """
+    user = db.query(User).filter(User.reset_password_token == token).first()
+    if not user:
+        logger.warning(f"Токен сброса пароля не найден: {token}")
+        return None
+    if not user.reset_password_token_expiration or user.reset_password_token_expiration < datetime.now(UTC):
+        logger.warning(f"Токен сброса пароля истёк для пользователя: {user.email}")
+        return None
+    return user
+
+def reset_password(db: Session, user: User, new_password: str):
+    """
+    Сбрасывает пароль пользователя и удаляет токен сброса.
+    :param db: Сессия БД.
+    :param user: Объект пользователя.
+    :param new_password: Новый пароль.
+    """
+    user.hashed_password = get_password_hash(new_password)
+    user.reset_password_token = None
+    user.reset_password_token_expiration = None
+    db.commit()
+    db.refresh(user)
+    logger.info(f"Пользователь сбросил пароль: {user.email}") 

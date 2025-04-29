@@ -1,7 +1,7 @@
 """
 Pydantic-схемы для ссылок: базовая, создание, обновление, ответ.
 """
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, validator, field_validator
 from typing import Optional
 from ..utils.mylogger import Logger, ensure_log_directory
 
@@ -22,6 +22,15 @@ class LinkBase(BaseModel):
         # Инициализация базовой схемы ссылки
         super().__init__(**data)
         logger.debug(f"Создана схема LinkBase: url={self.url}")
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def url_no_xss(cls, v):
+        url_str = str(v)
+        forbidden = ['<', '>', '"', "'", ' ']
+        if any(char in url_str for char in forbidden):
+            raise ValueError("URL содержит недопустимые символы (XSS/SQL injection protection)")
+        return v
 
 class LinkCreate(LinkBase):
     """

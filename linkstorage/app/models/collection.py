@@ -3,6 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 from .base import Base
 from ..utils.mylogger import Logger, ensure_log_directory
 
@@ -28,7 +29,8 @@ class Collection(Base):
     # Дата и время последнего обновления коллекции (обновляется автоматически)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     # ID пользователя-владельца (внешний ключ)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user = relationship("User", back_populates="collections")
 
     def __init__(self, *args, **kwargs):
         # Инициализация экземпляра коллекции через родительский конструктор
@@ -52,3 +54,5 @@ class CollectionLink(Base):
         # Инициализация экземпляра связи через родительский конструктор
         super().__init__(*args, **kwargs)
         logger.info(f"Создана связь коллекция-ссылка: collection_id={getattr(self, 'collection_id', None)}, link_id={getattr(self, 'link_id', None)}")
+
+# ВНИМАНИЕ: После изменения ondelete/cascade необходимо создать новую миграцию Alembic!

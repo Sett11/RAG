@@ -3,6 +3,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from ..database import get_db
 from ..schemas.link import LinkCreate, LinkResponse, LinkUpdate
 from ..crud.link import create_link, get_links, get_link, update_link, delete_link
@@ -30,9 +31,13 @@ def create_user_link(
     :param current_user: Текущий пользователь.
     :return: Данные созданной ссылки.
     """
-    # Создаём новую ссылку через функцию crud, передаём id пользователя
     logger.info(f"Создание ссылки пользователем {current_user.email}: {link.url}")
-    return create_link(db, link, current_user.id)
+    try:
+        return create_link(db, link, current_user.id)
+    except IntegrityError:
+        db.rollback()
+        logger.warning(f"Попытка добавить дубликат ссылки: {link.url} пользователем {current_user.email}")
+        raise HTTPException(status_code=409, detail="Link with this URL already exists")
 
 @router.get("/links/", response_model=list[LinkResponse])
 def read_user_links(
@@ -52,6 +57,25 @@ def read_user_links(
     # Получаем список ссылок пользователя с поддержкой пагинации
     logger.info(f"Получение ссылок пользователя: {current_user.email}")
     return get_links(db, current_user.id, skip, limit)
+
+@router.get("/links/{link_id}", response_model=LinkResponse)
+def read_user_link(
+    link_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получает одну ссылку пользователя по её ID.
+    :param link_id: ID ссылки.
+    :param db: Сессия БД.
+    :param current_user: Текущий пользователь.
+    :return: Данные ссылки или 404.
+    """
+    db_link = get_link(db, link_id, current_user.id)
+    if not db_link:
+        logger.warning(f"Попытка получить несуществующую ссылку: {link_id} пользователем {current_user.email}")
+        raise HTTPException(status_code=404, detail="Link not found")
+    return db_link
 
 @router.put("/links/{link_id}", response_model=LinkResponse)
 def update_user_link(

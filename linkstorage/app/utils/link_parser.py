@@ -68,7 +68,11 @@ def parse_link_metadata(url: str):
     # Если найден og:type, используем его, если он есть в LinkType
     if og_type:
         og_type_content = og_type.get("content", "").lower()
-        if og_type_content in LinkType.__members__:
+        try:
+            valid_types = [e.value for e in LinkType]
+        except TypeError:
+            valid_types = [v for k, v in LinkType.__dict__.items() if not k.startswith('_') and isinstance(v, str)]
+        if og_type_content in valid_types:
             metadata["link_type"] = og_type_content
     
     logger.info(f"Метаданные успешно извлечены для {url}")

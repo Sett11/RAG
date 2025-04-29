@@ -54,4 +54,23 @@ class Token(BaseModel):
     def __init__(self, **data):
         # Инициализация схемы токена
         super().__init__(**data)
-        logger.debug(f"Создана схема Token: тип={self.token_type}") 
+        logger.debug(f"Создана схема Token: тип={self.token_type}")
+
+class PasswordResetRequest(BaseModel):
+    """
+    Схема для запроса сброса пароля (email).
+    """
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    """
+    Схема для подтверждения сброса пароля (token, новый пароль).
+    """
+    token: str
+    new_password: str
+
+class MessageResponse(BaseModel):
+    """
+    Схема для простого текстового ответа (message).
+    """
+    message: str 
