@@ -1,0 +1,11 @@
+# Core dependencies
+numpy
+pandas
+scikit-learn
+
+# Deep learning
+tensorflow
+keras
+
+# Utilities
+matplotlib
